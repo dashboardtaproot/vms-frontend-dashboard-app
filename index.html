@@ -71,7 +71,7 @@
         const { useState, useEffect, createContext, useContext, useReducer, useMemo, useCallback, useRef } = React;
         const { createRoot } = ReactDOM;
 
-        // --- Configuration -----------------------------------------------------------------
+        // --- Configuration & Utilities -----------------------------------------------------
         const API_BASE_URL = '/api';
         const DASHBOARD_CONFIGS = {
             'ecaltVMSDisplay': { title: 'Eclat VMS', companyName: 'Eclat Solutions LLC', postingFrom: 'All' },
@@ -81,6 +81,18 @@
             'TaprootTexasDisplay': { title: 'Taproot Texas VMS', companyName: 'Taproot Solutions INC', postingFrom: 'State Of Texas' },
         };
         const EDITABLE_COLUMNS = ['Working By', 'No. of Resumes Submitted', 'Remarks', '1st Candidate Name', '2nd Candidate Name', '3rd Candidate Name'];
+        const DATE_COLUMNS = ['Posting Date', 'Last Submission Date'];
+
+        const formatDate = (isoString) => {
+            if (!isoString || isoString === 'Need To Update') return isoString;
+            try {
+                const date = new Date(isoString);
+                if (isNaN(date.getTime())) return isoString;
+                return date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+            } catch (e) {
+                return isoString;
+            }
+        };
 
         // --- API Helper --------------------------------------------------------------------
         const api = {
@@ -318,7 +330,7 @@
 
             const handleAction = async (actionType, job) => {
                 setLoading(true);
-                const postingId = job[header.indexOf('Posting ID')];
+                const postingId = job['Posting ID'];
                 try {
                     if (actionType === 'close') {
                         await api.updateJobStatus([postingId], 'Closed', user.userIdentifier);
@@ -418,6 +430,7 @@
                                             {row.map((cell, cellIndex) => {
                                                 const headerName = header[cellIndex];
                                                 const isEditable = EDITABLE_COLUMNS.includes(headerName);
+                                                const isDate = DATE_COLUMNS.includes(headerName);
                                                 const postingId = row[header.indexOf('Posting ID')];
                                                 const isModified = unsavedChanges[postingId] && unsavedChanges[postingId][headerName] !== undefined;
                                                 
@@ -428,7 +441,7 @@
                                                         suppressContentEditableWarning={true}
                                                         onBlur={e => isEditable && handleCellEdit(rowIndex, cellIndex, e.target.innerText)}
                                                     >
-                                                        {cell}
+                                                        {isDate ? formatDate(cell) : cell}
                                                     </td>
                                                 );
                                             })}
@@ -496,7 +509,7 @@
                         {Object.entries(job).map(([key, value]) => (
                             <div key={key}>
                                 <h4 className="text-sm font-medium text-gray-500">{key}</h4>
-                                <p className="text-gray-800">{String(value)}</p>
+                                <p className="text-gray-800">{String(DATE_COLUMNS.includes(key) ? formatDate(value) : value)}</p>
                             </div>
                         ))}
                     </div>
@@ -508,7 +521,7 @@
             const isAdmin = user?.userRole?.includes('Admin');
             return (
                 <header className="bg-white shadow-md">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="flex justify-between items-center h-16">
                             <div className="flex items-center space-x-8">
                                 <h1 className="text-2xl font-bold text-indigo-600">VMS Portal</h1>
@@ -551,7 +564,7 @@
             return (
                 <div className="min-h-screen bg-gray-100">
                     <TopNav user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage} />
-                    <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                    <main className="px-4 sm:px-6 lg:px-8 py-6">
                         {currentPage.type === 'dashboard' && <DashboardPage sheetKey={currentPage.key} />}
                         {/* {currentPage.type === 'reports' && <ReportsPage />} */}
                         {/* {currentPage.type === 'admin' && <AdminPage />} */}
