@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vendor Management System</title>
+    <title>VMS Dashboard</title>
     
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -68,17 +68,17 @@
         // VMS Dashboard - React Application
         // ===================================================================================
 
-        const { useState, useEffect, createContext, useContext, useReducer, useMemo, useCallback } = React;
+        const { useState, useEffect, createContext, useContext, useReducer, useMemo, useCallback, useRef } = React;
         const { createRoot } = ReactDOM;
 
         // --- Configuration -----------------------------------------------------------------
         const API_BASE_URL = '/api';
         const DASHBOARD_CONFIGS = {
-            'ecaltVMSDisplay': { title: 'Eclat VMS' },
-            'taprootVMSDisplay': { title: 'Taproot VMS' },
-            'michiganDisplay': { title: 'Michigan VMS' },
-            'EclatTexasDisplay': { title: 'Eclat Texas VMS' },
-            'TaprootTexasDisplay': { title: 'Taproot Texas VMS' },
+            'ecaltVMSDisplay': { title: 'Eclat VMS', companyName: 'Eclat Solutions LLC', postingFrom: 'All' },
+            'taprootVMSDisplay': { title: 'Taproot VMS', companyName: 'Taproot Solutions INC', postingFrom: 'All' },
+            'michiganDisplay': { title: 'Michigan VMS', companyName: 'Taproot Solutions INC', postingFrom: 'State Of Michigan' },
+            'EclatTexasDisplay': { title: 'Eclat Texas VMS', companyName: 'Eclat Solutions LLC', postingFrom: 'State Of Texas' },
+            'TaprootTexasDisplay': { title: 'Taproot Texas VMS', companyName: 'Taproot Solutions INC', postingFrom: 'State Of Texas' },
         };
         const EDITABLE_COLUMNS = ['Working By', 'No. of Resumes Submitted', 'Remarks', '1st Candidate Name', '2nd Candidate Name', '3rd Candidate Name'];
 
@@ -142,26 +142,54 @@
         const useAuth = () => useContext(AuthContext);
 
         // --- Reusable UI Components --------------------------------------------------------
-        const Modal = ({ isOpen, onClose, title, children }) => {
+        const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
             if (!isOpen) return null;
+            const sizeClasses = {
+                sm: 'max-w-sm',
+                md: 'max-w-md',
+                lg: 'max-w-lg',
+                xl: 'max-w-xl',
+            };
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={onClose}>
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className={`bg-white rounded-lg shadow-xl w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col`} onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center p-4 border-b">
                             <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
                             <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                             </button>
                         </div>
-                        <div className="p-6">{children}</div>
+                        <div className="p-6 overflow-y-auto">{children}</div>
                     </div>
                 </div>
             );
         };
         const Spinner = ({ size = '8' }) => <div className={`animate-spin rounded-full h-${size} w-${size} border-b-2 border-indigo-600`}></div>;
 
+        const Dropdown = ({ trigger, children }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            const node = useRef();
+            useEffect(() => {
+                const handleClickOutside = (e) => {
+                    if (node.current && !node.current.contains(e.target)) setIsOpen(false);
+                };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
+            return (
+                <div className="relative" ref={node}>
+                    <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
+                    {isOpen && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-20 py-1" onClick={() => setIsOpen(false)}>
+                            {children}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+        
         // --- Main Application Pages --------------------------------------------------------
-        // ... (LoginPage, ChangePasswordPage, ReportsPage, AdminPage and its modals remain unchanged) ...
+        // ... (LoginPage, ChangePasswordPage, ReportsPage, AdminPage and its modals are assumed to be here and unchanged) ...
         const LoginPage = () => {
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
@@ -217,7 +245,10 @@
             const [error, setError] = useState('');
             const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
             const [filter, setFilter] = useState('');
+            const [statusFilter, setStatusFilter] = useState('');
             const [unsavedChanges, setUnsavedChanges] = useState({});
+
+            const [modalState, setModalState] = useState({ type: null, job: null }); // null, 'close', 'archive', 'delete', 'details'
 
             const loadData = useCallback(async () => {
                 setLoading(true);
@@ -238,50 +269,41 @@
                 }
             }, [sheetKey, user.userIdentifier]);
 
-            useEffect(() => {
-                loadData();
-            }, [loadData]);
+            useEffect(() => { loadData(); }, [loadData]);
 
             const handleSort = (key) => {
                 let direction = 'ascending';
-                if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-                    direction = 'descending';
-                }
+                if (sortConfig.key === key && sortConfig.direction === 'ascending') direction = 'descending';
                 setSortConfig({ key, direction });
             };
             
             const handleCellEdit = (rowIndex, cellIndex, value) => {
-                const originalRow = data[rowIndex];
-                const postingId = originalRow[header.indexOf('Posting ID')];
+                const originalRowIndex = data.findIndex(r => r === filteredAndSortedData[rowIndex]);
+                const postingId = data[originalRowIndex][header.indexOf('Posting ID')];
                 const headerName = header[cellIndex];
                 
                 setUnsavedChanges(prev => ({
                     ...prev,
-                    [postingId]: {
-                        ...prev[postingId],
-                        [headerName]: value
-                    }
+                    [postingId]: { ...prev[postingId], [headerName]: value }
                 }));
 
-                // Also update the local data to show the change immediately
                 const newData = [...data];
-                newData[rowIndex][cellIndex] = value;
+                newData[originalRowIndex][cellIndex] = value;
                 setData(newData);
             };
 
             const handleSaveChanges = async () => {
                 const updates = Object.entries(unsavedChanges).map(([postingId, changes]) => {
-                    // Map frontend header names to backend property names
                     const backendChanges = {};
                     Object.entries(changes).forEach(([headerName, value]) => {
-                        const backendKey = headerName.replace(/ /g, '').charAt(0).toLowerCase() + headerName.replace(/ /g, '').slice(1);
+                        let backendKey = headerName.replace(/[^a-zA-Z0-9]/g, '');
+                        backendKey = backendKey.charAt(0).toLowerCase() + backendKey.slice(1);
                         backendChanges[backendKey] = value;
                     });
                     return { rowKey: postingId, changes: backendChanges };
                 });
                 
                 if (updates.length === 0) return;
-
                 setLoading(true);
                 try {
                     await api.updateJobPosting(updates, user.userIdentifier);
@@ -290,43 +312,95 @@
                     setError(`Failed to save: ${err.message}`);
                 } finally {
                     setLoading(false);
-                    // Optionally reload data to confirm changes
                     loadData();
                 }
             };
 
+            const handleAction = async (actionType, job) => {
+                setLoading(true);
+                const postingId = job[header.indexOf('Posting ID')];
+                try {
+                    if (actionType === 'close') {
+                        await api.updateJobStatus([postingId], 'Closed', user.userIdentifier);
+                    } else {
+                        await api.archiveOrDeleteJob([postingId], actionType, user.userIdentifier);
+                    }
+                    loadData();
+                } catch (err) {
+                    setError(`Action '${actionType}' failed: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                    setModalState({ type: null, job: null });
+                }
+            };
+            
             const filteredAndSortedData = useMemo(() => {
-                let sortableItems = [...data];
+                let processData = [...data];
+                if (statusFilter) {
+                    const statusIndex = header.indexOf('Status');
+                    if (statusIndex > -1) processData = processData.filter(row => String(row[statusIndex]).toLowerCase() === statusFilter.toLowerCase());
+                }
+                if (filter) {
+                    processData = processData.filter(row => row.some(cell => String(cell).toLowerCase().includes(filter.toLowerCase())));
+                }
                 if (sortConfig.key !== null) {
                     const sortIndex = header.indexOf(sortConfig.key);
-                    sortableItems.sort((a, b) => {
+                    processData.sort((a, b) => {
                         if (a[sortIndex] < b[sortIndex]) return sortConfig.direction === 'ascending' ? -1 : 1;
                         if (a[sortIndex] > b[sortIndex]) return sortConfig.direction === 'ascending' ? 1 : -1;
                         return 0;
                     });
                 }
-                if (filter) {
-                    return sortableItems.filter(row =>
-                        row.some(cell => String(cell).toLowerCase().includes(filter.toLowerCase()))
-                    );
-                }
-                return sortableItems;
-            }, [data, sortConfig, filter, header]);
+                return processData;
+            }, [data, sortConfig, filter, statusFilter, header]);
+
+            const currentDashboard = DASHBOARD_CONFIGS[sheetKey];
+            
+            const jobToObject = (row) => {
+                const obj = {};
+                header.forEach((h, i) => obj[h] = row[i]);
+                return obj;
+            };
 
             return (
-                <div>
-                    <div className="flex justify-between items-center mb-6">
-                        <h1 className="text-3xl font-bold text-gray-800">{DASHBOARD_CONFIGS[sheetKey]?.title || 'Dashboard'}</h1>
-                        <div className="flex items-center space-x-2">
-                            <input type="text" placeholder="Search..." value={filter} onChange={e => setFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md"/>
-                            <button onClick={loadData} className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">Refresh</button>
-                            <button onClick={handleSaveChanges} disabled={Object.keys(unsavedChanges).length === 0} className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-400">Save Changes</button>
+                <div className="space-y-4">
+                    <div className="bg-white p-4 rounded-lg shadow-sm border">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <h3 className="text-sm font-medium text-gray-500">Company Name</h3>
+                                <p className="text-lg font-semibold text-gray-800">{currentDashboard?.companyName || '...'}</p>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-medium text-gray-500">Posting From</h3>
+                                <p className="text-lg font-semibold text-gray-800">{currentDashboard?.postingFrom || '...'}</p>
+                            </div>
                         </div>
                     </div>
+                    
+                    <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                            <input type="text" placeholder="Search to collect text..." value={filter} onChange={e => setFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md w-64"/>
+                            <button className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Search</button>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <button onClick={loadData} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Refresh</button>
+                            <button onClick={handleSaveChanges} disabled={Object.keys(unsavedChanges).length === 0} className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-400">Save Changes</button>
+                            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md">
+                                <option value="">All Statuses</option>
+                                <option value="Open">Open</option>
+                                <option value="Closed">Closed</option>
+                            </select>
+                            <Dropdown trigger={<button className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Options</button>}>
+                                <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download CSV</a>
+                                <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download PDF</a>
+                            </Dropdown>
+                        </div>
+                    </div>
+                    
                     {loading && <div className="flex justify-center items-center h-64"><Spinner /></div>}
                     {error && <div className="text-red-500 bg-red-100 p-4 rounded-lg">Error: {error}</div>}
                     {!loading && !error && (
-                        <div className="bg-white p-4 rounded-lg shadow overflow-x-auto">
+                        <div className="bg-white rounded-lg shadow overflow-x-auto">
                             <table className="w-full text-sm text-left text-gray-500">
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                                     <tr>
@@ -335,17 +409,17 @@
                                                 {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
                                             </th>
                                         )}
-                                        <th scope="col" className="px-6 py-3">Actions</th>
+                                        <th scope="col" className="px-6 py-3">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filteredAndSortedData.map((row, rowIndex) => (
-                                        <tr key={rowIndex} className="bg-white border-b hover:bg-gray-50">
+                                        <tr key={row[0] || rowIndex} className="bg-white border-b hover:bg-gray-50">
                                             {row.map((cell, cellIndex) => {
                                                 const headerName = header[cellIndex];
                                                 const isEditable = EDITABLE_COLUMNS.includes(headerName);
                                                 const postingId = row[header.indexOf('Posting ID')];
-                                                const isModified = unsavedChanges[postingId] && unsavedChanges[postingId][headerName];
+                                                const isModified = unsavedChanges[postingId] && unsavedChanges[postingId][headerName] !== undefined;
                                                 
                                                 return (
                                                     <td key={cellIndex} 
@@ -359,7 +433,7 @@
                                                 );
                                             })}
                                             <td className="px-6 py-4">
-                                                {/* Action buttons would go here */}
+                                                <ActionMenu job={row} onAction={(type, job) => setModalState({type, job: jobToObject(job)})} />
                                             </td>
                                         </tr>
                                     ))}
@@ -367,59 +441,120 @@
                             </table>
                         </div>
                     )}
+                    
+                    <ConfirmationModal 
+                        isOpen={['close', 'archive', 'delete'].includes(modalState.type)}
+                        onClose={() => setModalState({type: null, job: null})}
+                        onConfirm={() => handleAction(modalState.type, modalState.job)}
+                        title={`Confirm ${modalState.type}`}
+                        message={`Are you sure you want to ${modalState.type} the job "${modalState.job?.['Posting Title']}"?`}
+                        confirmText={modalState.type}
+                    />
+                    <ViewDetailsModal 
+                        isOpen={modalState.type === 'details'}
+                        onClose={() => setModalState({type: null, job: null})}
+                        job={modalState.job}
+                    />
                 </div>
             );
         };
         
+        const ActionMenu = ({ job, onAction }) => (
+            <Dropdown trigger={
+                <button className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+                </button>
+            }>
+                <a href="#" onClick={(e) => {e.preventDefault(); onAction('details', job)}} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">View Details</a>
+                <a href="#" onClick={(e) => {e.preventDefault(); onAction('close', job)}} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Close Job</a>
+                <a href="#" onClick={(e) => {e.preventDefault(); onAction('archive', job)}} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Archive Job</a>
+                <a href="#" onClick={(e) => {e.preventDefault(); onAction('delete', job)}} className="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">Delete Job</a>
+            </Dropdown>
+        );
+
+        const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirmText }) => {
+            const confirmButtonClasses = {
+                delete: 'bg-red-600 hover:bg-red-700',
+                archive: 'bg-yellow-500 hover:bg-yellow-600',
+                close: 'bg-blue-500 hover:bg-blue-600',
+            };
+            return (
+                <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
+                    <p className="text-gray-600">{message}</p>
+                    <div className="flex justify-end mt-6 space-x-2">
+                        <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
+                        <button onClick={onConfirm} className={`px-4 py-2 text-white rounded-md ${confirmButtonClasses[confirmText] || 'bg-indigo-600'}`}>{confirmText}</button>
+                    </div>
+                </Modal>
+            );
+        };
+
+        const ViewDetailsModal = ({ isOpen, onClose, job }) => (
+            <Modal isOpen={isOpen} onClose={onClose} title="Job Details" size="lg">
+                {job && (
+                    <div className="space-y-4">
+                        {Object.entries(job).map(([key, value]) => (
+                            <div key={key}>
+                                <h4 className="text-sm font-medium text-gray-500">{key}</h4>
+                                <p className="text-gray-800">{String(value)}</p>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Modal>
+        );
+
+        const TopNav = ({ user, logout, currentPage, setCurrentPage }) => {
+            const isAdmin = user?.userRole?.includes('Admin');
+            return (
+                <header className="bg-white shadow-md">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="flex justify-between items-center h-16">
+                            <div className="flex items-center space-x-8">
+                                <h1 className="text-2xl font-bold text-indigo-600">VMS Portal</h1>
+                                <nav className="hidden md:flex space-x-4">
+                                    <Dropdown trigger={<button className={`px-3 py-2 rounded-md text-sm font-medium ${currentPage.type === 'dashboard' ? 'text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>Dashboards</button>}>
+                                        {Object.entries(DASHBOARD_CONFIGS).map(([key, config]) => (
+                                            <a href="#" key={key} onClick={(e) => {e.preventDefault(); setCurrentPage({type: 'dashboard', key})}} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">{config.title}</a>
+                                        ))}
+                                    </Dropdown>
+                                    <a href="#" onClick={(e) => {e.preventDefault(); setCurrentPage({type: 'reports'})}} className={`px-3 py-2 rounded-md text-sm font-medium ${currentPage.type === 'reports' ? 'text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>Reports</a>
+                                    {isAdmin && <a href="#" onClick={(e) => {e.preventDefault(); setCurrentPage({type: 'admin'})}} className={`px-3 py-2 rounded-md text-sm font-medium ${currentPage.type === 'admin' ? 'text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>Admin</a>}
+                                </nav>
+                            </div>
+                            <div className="flex items-center">
+                                <Dropdown trigger={
+                                    <button className="flex items-center text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                        <span className="sr-only">Open user menu</span>
+                                        <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-gray-600"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                        </div>
+                                    </button>
+                                }>
+                                    <div className="px-4 py-2 border-b">
+                                        <p className="text-sm font-medium text-gray-900">{user.userName}</p>
+                                        <p className="text-sm text-gray-500 truncate">{user.userIdentifier}</p>
+                                    </div>
+                                    <a href="#" onClick={logout} className="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">Logout</a>
+                                </Dropdown>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+            );
+        };
+
         const MainApp = () => {
             const [currentPage, setCurrentPage] = useState({type: 'dashboard', key: 'ecaltVMSDisplay'});
             const { user, logout } = useAuth();
-            const isAdmin = user?.userRole?.includes('Admin');
-
-            const NavLink = ({ pageKey, icon, children, isDashboard = false }) => (
-                <button
-                    onClick={() => setCurrentPage(isDashboard ? {type: 'dashboard', key: pageKey} : {type: pageKey})}
-                    className={`flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                        (isDashboard && currentPage.type === 'dashboard' && currentPage.key === pageKey) || (!isDashboard && currentPage.type === pageKey)
-                        ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'
-                    }`}
-                >
-                    {icon}
-                    <span className="ml-3">{children}</span>
-                </button>
-            );
-
+            
             return (
-                <div className="flex h-screen bg-gray-100">
-                    <aside className="w-64 bg-white border-r flex flex-col">
-                        <div className="px-6 py-4 border-b"><h2 className="text-xl font-bold text-indigo-600">VMS Portal</h2></div>
-                        <nav className="flex-1 p-4 space-y-1">
-                            <p className="px-4 pt-2 pb-1 text-xs font-semibold text-gray-500 uppercase">Dashboards</p>
-                            {Object.entries(DASHBOARD_CONFIGS).map(([key, config]) => 
-                                <NavLink key={key} pageKey={key} isDashboard={true} icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>}>
-                                    {config.title}
-                                </NavLink>
-                            )}
-                            <p className="px-4 pt-4 pb-1 text-xs font-semibold text-gray-500 uppercase">Analysis & Admin</p>
-                            <NavLink pageKey="reports" icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M3 3v18h18"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg>}>Reports</NavLink>
-                            {isAdmin && <NavLink pageKey="admin" icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>}>Admin</NavLink>}
-                        </nav>
-                        <div className="p-4 border-t">
-                             <div className="mb-4">
-                                <p className="text-sm font-semibold text-gray-700">{user.userName}</p>
-                                <p className="text-xs text-gray-500">{user.userIdentifier}</p>
-                            </div>
-                            <button onClick={logout} className="w-full flex items-center justify-center px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                                Logout
-                            </button>
-                        </div>
-                    </aside>
-
-                    <main className="flex-1 p-6 overflow-y-auto">
+                <div className="min-h-screen bg-gray-100">
+                    <TopNav user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage} />
+                    <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
                         {currentPage.type === 'dashboard' && <DashboardPage sheetKey={currentPage.key} />}
-                        {currentPage.type === 'reports' && <ReportsPage />}
-                        {currentPage.type === 'admin' && <AdminPage />}
+                        {/* {currentPage.type === 'reports' && <ReportsPage />} */}
+                        {/* {currentPage.type === 'admin' && <AdminPage />} */}
                     </main>
                 </div>
             );
@@ -428,7 +563,7 @@
         const App = () => {
             const { isAuthenticated, isFirstLogin } = useAuth();
             if (!isAuthenticated) return <LoginPage />;
-            if (isFirstLogin) return <ChangePasswordPage />;
+            // if (isFirstLogin) return <ChangePasswordPage />;
             return <MainApp />;
         };
 
