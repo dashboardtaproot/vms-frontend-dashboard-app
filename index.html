@@ -58,14 +58,12 @@
             cursor: pointer;
             user-select: none;
         }
-        .table-fixed th, .table-fixed td {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+        .table-layout {
+            table-layout: fixed;
+            width: 100%;
         }
-        .table-fixed th.wrap-text, .table-fixed td.wrap-text {
-            white-space: normal;
-            word-break: break-word;
+        .table-layout th, .table-layout td {
+            overflow-wrap: break-word;
         }
     </style>
 </head>
@@ -205,7 +203,7 @@
         };
         
         // --- Main Application Pages --------------------------------------------------------
-        // ... (LoginPage, ChangePasswordPage, ReportsPage, AdminPage and its modals are assumed to be here and unchanged) ...
+        // ... (LoginPage, ChangePasswordPage, ReportsPage, AdminPage and their modals are assumed to be here and unchanged) ...
         const LoginPage = () => {
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
@@ -255,12 +253,11 @@
 
         const DashboardPage = ({ sheetKey }) => {
             const { user } = useAuth();
-            const [data, setData] = useState([]);
-            const [header, setHeader] = useState([]);
+            const [rawData, setRawData] = useState({ header: [], rows: [] });
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
             const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
-            const [columnFilters, setColumnFilters] = useState({});
+            const [generalFilter, setGeneralFilter] = useState('');
             const [statusFilter, setStatusFilter] = useState('');
             const [unsavedChanges, setUnsavedChanges] = useState({});
             const [modalState, setModalState] = useState({ type: null, job: null });
@@ -272,8 +269,7 @@
                 try {
                     const result = await api.getDashboardData(sheetKey, user.userIdentifier);
                     if (result.success) {
-                        setHeader(result.header);
-                        setData(result.rows);
+                        setRawData({ header: result.header, rows: result.rows });
                     } else {
                         setError(result.message);
                     }
@@ -286,29 +282,64 @@
 
             useEffect(() => { loadData(); }, [loadData]);
 
+            // --- Memoized logic to transform data for display ---
+            const { displayHeader, displayData } = useMemo(() => {
+                const { header, rows } = rawData;
+                if (!header || header.length === 0) return { displayHeader: [], displayData: [] };
+
+                const isCombinedView = sheetKey === 'ecaltVMSDisplay' || sheetKey === 'taprootVMSDisplay';
+
+                if (isCombinedView) {
+                    const clientIndex = header.indexOf('Client Name');
+                    const postingFromIndex = header.indexOf('Posting From');
+                    
+                    if (clientIndex === -1 || postingFromIndex === -1) return { displayHeader: header, displayData: rows };
+
+                    const newHeader = [...header];
+                    newHeader[clientIndex] = 'Client Info'; // Rename Client Name
+                    newHeader.splice(postingFromIndex, 1); // Remove Posting From
+
+                    const newRows = rows.map(row => {
+                        const client = row[clientIndex] || '';
+                        const location = row[postingFromIndex] || '';
+                        let clientInfo = '';
+                        if (client && location && location !== 'All') {
+                            clientInfo = `${client} / ${location}`;
+                        } else {
+                            clientInfo = client || location;
+                        }
+
+                        const newRow = [...row];
+                        newRow[clientIndex] = clientInfo;
+                        newRow.splice(postingFromIndex, 1);
+                        return newRow;
+                    });
+                    return { displayHeader: newHeader, displayData: newRows };
+                }
+                
+                // For specific views, remove Company Name and Posting From
+                const newHeader = header.filter(h => h !== 'Company Name' && h !== 'Posting From');
+                const indicesToKeep = newHeader.map(h => header.indexOf(h));
+                const newRows = rows.map(row => indicesToKeep.map(i => row[i]));
+
+                return { displayHeader: newHeader, displayData: newRows };
+
+            }, [rawData, sheetKey]);
+
             const handleSort = (key) => {
                 let direction = 'ascending';
                 if (sortConfig.key === key && sortConfig.direction === 'ascending') direction = 'descending';
                 setSortConfig({ key, direction });
             };
-
-            const handleColumnFilterChange = (headerKey, value) => {
-                setColumnFilters(prev => ({ ...prev, [headerKey]: value }));
-            };
             
             const handleCellEdit = (rowIndex, cellIndex, value) => {
-                const originalRowIndex = data.findIndex(r => r === filteredAndSortedData[rowIndex]);
-                const postingId = data[originalRowIndex][header.indexOf('Posting ID')];
-                const headerName = header[cellIndex];
+                const postingId = filteredAndSortedData[rowIndex][displayHeader.indexOf('Posting ID')];
+                const headerName = displayHeader[cellIndex];
                 
                 setUnsavedChanges(prev => ({
                     ...prev,
                     [postingId]: { ...prev[postingId], [headerName]: value }
                 }));
-
-                const newData = [...data];
-                newData[originalRowIndex][cellIndex] = value;
-                setData(newData);
             };
 
             const handleSaveChanges = async () => {
@@ -354,26 +385,21 @@
             };
             
             const filteredAndSortedData = useMemo(() => {
-                let processData = [...data];
+                let processData = [...displayData];
                 
                 if (statusFilter) {
-                    const statusIndex = header.indexOf('Status');
+                    const statusIndex = displayHeader.indexOf('Status');
                     if (statusIndex > -1) processData = processData.filter(row => String(row[statusIndex]).toLowerCase() === statusFilter.toLowerCase());
                 }
 
-                Object.entries(columnFilters).forEach(([headerKey, filterValue]) => {
-                    if (filterValue) {
-                        const colIndex = header.indexOf(headerKey);
-                        if (colIndex > -1) {
-                            processData = processData.filter(row => 
-                                String(row[colIndex]).toLowerCase().includes(filterValue.toLowerCase())
-                            );
-                        }
-                    }
-                });
+                if (generalFilter) {
+                    processData = processData.filter(row =>
+                        row.some(cell => String(cell).toLowerCase().includes(generalFilter.toLowerCase()))
+                    );
+                }
 
                 if (sortConfig.key !== null) {
-                    const sortIndex = header.indexOf(sortConfig.key);
+                    const sortIndex = displayHeader.indexOf(sortConfig.key);
                     processData.sort((a, b) => {
                         if (a[sortIndex] < b[sortIndex]) return sortConfig.direction === 'ascending' ? -1 : 1;
                         if (a[sortIndex] > b[sortIndex]) return sortConfig.direction === 'ascending' ? 1 : -1;
@@ -381,11 +407,11 @@
                     });
                 }
                 return processData;
-            }, [data, sortConfig, columnFilters, statusFilter, header]);
+            }, [displayData, sortConfig, generalFilter, statusFilter, displayHeader]);
 
             const downloadCsv = () => {
                 const csvRows = [];
-                csvRows.push(header.join(','));
+                csvRows.push(displayHeader.join(','));
                 for (const row of filteredAndSortedData) {
                     const values = row.map(v => `"${String(v).replace(/"/g, '""')}"`);
                     csvRows.push(values.join(','));
@@ -405,7 +431,7 @@
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF('landscape');
                 doc.autoTable({
-                    head: [header],
+                    head: [displayHeader],
                     body: filteredAndSortedData,
                 });
                 doc.save(`${sheetKey}_report.pdf`);
@@ -413,14 +439,16 @@
             
             const jobToObject = (row) => {
                 const obj = {};
-                header.forEach((h, i) => obj[h] = row[i]);
+                displayHeader.forEach((h, i) => obj[h] = row[i]);
                 return obj;
             };
 
             return (
                 <div className="space-y-4">
                     <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center justify-between">
-                        <h2 className="text-xl font-bold text-gray-800">{DASHBOARD_CONFIGS[sheetKey]?.title || 'Dashboard'}</h2>
+                        <div className="flex items-center space-x-2">
+                            <input type="text" placeholder="Search to collect text..." value={generalFilter} onChange={e => setGeneralFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md w-64"/>
+                        </div>
                         <div className="flex items-center space-x-2">
                             <button onClick={loadData} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Refresh</button>
                             <button onClick={handleSaveChanges} disabled={Object.keys(unsavedChanges).length === 0} className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-400">Save Changes</button>
@@ -439,36 +467,28 @@
                     {loading && <div className="flex justify-center items-center h-64"><Spinner /></div>}
                     {error && <div className="text-red-500 bg-red-100 p-4 rounded-lg">Error: {error}</div>}
                     {!loading && !error && (
-                        <div className="bg-white rounded-lg shadow">
-                            <table className="w-full text-sm text-left text-gray-500 table-fixed">
+                        <div className="bg-white rounded-lg shadow overflow-x-auto">
+                            <table className="w-full text-sm text-left text-gray-500 table-layout">
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                                     <tr>
-                                        {header.map(h => 
-                                            <th key={h} scope="col" className="px-4 py-2 w-48 first:w-32 last:w-24 wrap-text" >
-                                                <div className="flex flex-col">
-                                                    <div onClick={() => handleSort(h)} className="sortable-header font-bold">
-                                                        {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
-                                                    </div>
-                                                    <input type="text" placeholder={`Filter...`} 
-                                                        className="mt-1 p-1 border rounded text-xs"
-                                                        value={columnFilters[h] || ''}
-                                                        onChange={(e) => handleColumnFilterChange(h, e.target.value)}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    />
+                                        {displayHeader.map(h => 
+                                            <th key={h} scope="col" className="px-4 py-3" >
+                                                <div onClick={() => handleSort(h)} className="sortable-header font-bold">
+                                                    {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
                                                 </div>
                                             </th>
                                         )}
-                                        <th scope="col" className="px-4 py-3 w-24">Action</th>
+                                        <th scope="col" className="px-4 py-3">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filteredAndSortedData.map((row, rowIndex) => (
                                         <tr key={row[0] || rowIndex} className="bg-white border-b hover:bg-gray-50">
                                             {row.map((cell, cellIndex) => {
-                                                const headerName = header[cellIndex];
+                                                const headerName = displayHeader[cellIndex];
                                                 const isEditable = EDITABLE_COLUMNS.includes(headerName);
                                                 const isDate = DATE_COLUMNS.includes(headerName);
-                                                const postingId = row[header.indexOf('Posting ID')];
+                                                const postingId = row[displayHeader.indexOf('Posting ID')];
                                                 const isModified = unsavedChanges[postingId] && unsavedChanges[postingId][headerName] !== undefined;
                                                 
                                                 return (
