@@ -219,7 +219,6 @@
         };
         
         // --- Main Application Pages --------------------------------------------------------
-        // ... (LoginPage, ChangePasswordPage, ReportsPage, AdminPage and their modals are assumed to be here and unchanged) ...
         const LoginPage = () => {
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
@@ -264,6 +263,19 @@
                         </div>
                     </div>
                 </>
+            );
+        };
+
+        const ReportsPage = () => {
+             return (
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800 mb-6">Reports</h1>
+                    <div className="bg-white p-6 rounded-lg shadow">
+                      <p className="text-gray-700">
+                        The reports section would contain charts and data visualizations based on job posting data.
+                      </p>
+                    </div>
+                </div>
             );
         };
 
@@ -513,27 +525,6 @@
                 }
             };
             
-            const COLUMN_WIDTHS = {
-                'Posting ID': { minWidth: '5rem' },
-                'Posting Title': { minWidth: '12rem' },
-                'Posting Date': { minWidth: '8rem' },
-                'Deadline': { minWidth: '8rem' },
-                'Max Submissions': { minWidth: '6rem' },
-                'Max C2C Rate': { minWidth: '6rem' },
-                'Client Info': { minWidth: '12rem' },
-                'Required Skill Set': { minWidth: '24rem' },
-                'Any Required Certificates': { minWidth: '16rem' },
-                'Work Position Type': { minWidth: '8rem' },
-                'Working By': { minWidth: '10rem' },
-                '# Submitted': { minWidth: '6rem' },
-                'Remarks': { minWidth: '12rem' },
-                '1st Candidate Name': { minWidth: '10rem' },
-                '2nd Candidate Name': { minWidth: '10rem' },
-                '3rd Candidate Name': { minWidth: '10rem' },
-                'Status': { minWidth: '6rem' },
-                'Action': { minWidth: '5rem' }
-            };
-
             return (
                 <div className="space-y-4">
                     <div className="bg-white p-4 rounded-lg shadow-sm border">
@@ -568,13 +559,13 @@
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                                     <tr>
                                         {displayHeader.map(h => 
-                                            <th key={h} scope="col" className="px-4 py-3" style={COLUMN_WIDTHS[h] || {}}>
+                                            <th key={h} scope="col" className="px-4 py-3" >
                                                 <div onClick={() => handleSort(h)} className="sortable-header font-bold">
                                                     {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
                                                 </div>
                                             </th>
                                         )}
-                                        <th scope="col" className="px-4 py-3" style={COLUMN_WIDTHS['Action']}>Action</th>
+                                        <th scope="col" className="px-4 py-3">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
