@@ -58,17 +58,16 @@
             cursor: pointer;
             user-select: none;
         }
-        .table-layout {
-            table-layout: fixed;
-            width: 100%;
-        }
         .table-layout th, .table-layout td {
-            overflow-wrap: break-word; /* Allow text wrapping */
-            white-space: normal; /* NEW: Ensure text wraps */
             border-right: 1px solid #e5e7eb; /* Add right border */
+            white-space: nowrap; /* Prevent text wrapping by default */
         }
         .table-layout th:last-child, .table-layout td:last-child {
             border-right: none; /* Remove right border from last cell */
+        }
+        .wrap-text {
+            white-space: normal !important; /* Allow wrapping for specific columns */
+            word-break: break-word;
         }
         .column-list-item.dragging {
             opacity: 0.5;
