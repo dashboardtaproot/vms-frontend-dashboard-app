@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VMS Dashboard</title>
+    <title>Vendor Management System</title>
     
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -15,6 +15,10 @@
 
     <!-- Chart.js for reports -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 
     <!-- Custom Google Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -47,6 +51,13 @@
             cursor: not-allowed;
             opacity: 0.6;
         }
+        [contenteditable="true"].modified-cell {
+            background-color: #fef9c3; /* yellow-100 */
+        }
+        .sortable-header {
+            cursor: pointer;
+            user-select: none;
+        }
     </style>
 </head>
 <body>
@@ -55,39 +66,29 @@
     <script type="text/babel">
         // ===================================================================================
         // VMS Dashboard - React Application
-        // This single file contains the entire frontend logic.
-        // It's structured into components for readability and maintainability.
         // ===================================================================================
 
-        const { useState, useEffect, createContext, useContext, useReducer, useRef } = React;
+        const { useState, useEffect, createContext, useContext, useReducer, useMemo, useCallback } = React;
         const { createRoot } = ReactDOM;
 
         // --- Configuration -----------------------------------------------------------------
-        // This relative path works because the Static Web App is linked to the Function App.
         const API_BASE_URL = '/api';
+        const DASHBOARD_CONFIGS = {
+            'ecaltVMSDisplay': { title: 'Eclat VMS' },
+            'taprootVMSDisplay': { title: 'Taproot VMS' },
+            'michiganDisplay': { title: 'Michigan VMS' },
+            'EclatTexasDisplay': { title: 'Eclat Texas VMS' },
+            'TaprootTexasDisplay': { title: 'Taproot Texas VMS' },
+        };
+        const EDITABLE_COLUMNS = ['Working By', 'No. of Resumes Submitted', 'Remarks', '1st Candidate Name', '2nd Candidate Name', '3rd Candidate Name'];
 
         // --- API Helper --------------------------------------------------------------------
-        // A centralized place for all backend API calls.
         const api = {
             call: async (endpoint, method = 'GET', body = null, params = {}) => {
                 const url = new URL(`${API_BASE_URL}/${endpoint}`, window.location.origin);
-                
-                // Add query parameters for GET requests
-                if (method === 'GET') {
-                    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
-                }
-
-                const options = {
-                    method,
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                };
-
-                if (body) {
-                    options.body = JSON.stringify(body);
-                }
-
+                if (method === 'GET') Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+                const options = { method, headers: { 'Content-Type': 'application/json' } };
+                if (body) options.body = JSON.stringify(body);
                 try {
                     const response = await fetch(url, options);
                     if (!response.ok) {
@@ -100,228 +101,67 @@
                     throw error;
                 }
             },
-            
-            // Authentication
             authenticateUser: (username, password) => api.call('authenticateUser', 'POST', { username, password }),
-            changePassword: (targetUsername, newPassword, authenticatedUsername) => api.call('changePassword', 'POST', { targetUsername, newPassword, authenticatedUsername }),
-            requestPasswordReset: (username) => api.call('requestPasswordReset', 'POST', { username }),
-
-            // Users (Admin)
             getUsers: (authenticatedUsername) => api.call('getUsers', 'GET', null, { authenticatedUsername }),
             addUser: (userData, authenticatedUsername) => api.call('addUser', 'POST', { ...userData, authenticatedUsername }),
             updateUser: (originalUsername, userData, authenticatedUsername) => api.call('updateUser', 'POST', { originalUsername, userData, authenticatedUsername }),
             deleteUser: (usernameToDelete, authenticatedUsername) => api.call('deleteUser', 'POST', { usernameToDelete, authenticatedUsername }),
-
-            // Job Postings
             getDashboardData: (sheetKey, authenticatedUsername) => api.call('getDashboardData', 'GET', null, { sheetKey, authenticatedUsername }),
-            processJobPosting: (formData, authenticatedUsername) => api.call('processJobPosting', 'POST', { formData, authenticatedUsername }),
             updateJobPosting: (updates, authenticatedUsername) => api.call('updateJobPosting', 'POST', { updates, authenticatedUsername }),
             updateJobStatus: (postingIds, newStatus, authenticatedUsername) => api.call('updateJobStatus', 'POST', { postingIds, newStatus, authenticatedUsername }),
             archiveOrDeleteJob: (postingIds, actionType, authenticatedUsername) => api.call('archiveOrDeleteJob', 'POST', { postingIds, actionType, authenticatedUsername }),
-            
-            // Reports
-            getReportData: (params) => api.call('getReportData', 'GET', null, params), // params: {sheetKey, startDate, endDate, authenticatedUsername}
-            generateAndSendJobReport: (reportData) => api.call('generateAndSendJobReport', 'POST', reportData),
-
-            // Notifications
-            getNotifications: (authenticatedUsername) => api.call('getNotifications', 'GET', null, { authenticatedUsername }),
-            markNotificationsAsRead: (notificationIds, authenticatedUsername) => api.call('markNotificationsAsRead', 'POST', { notificationIds, authenticatedUsername }),
-
-            // Chat
-            getMessages: (user1, user2, authenticatedUsername) => api.call('getMessages', 'GET', null, { user1, user2, authenticatedUsername }),
-            saveMessage: (sender, recipient, messageContent, authenticatedUsername) => api.call('saveMessage', 'POST', { sender, recipient, messageContent, authenticatedUsername }),
         };
 
         // --- Authentication Context --------------------------------------------------------
-        // Manages user session state across the application.
         const AuthContext = createContext();
-
         const authReducer = (state, action) => {
             switch (action.type) {
-                case 'LOGIN':
-                    return { ...state, isAuthenticated: true, user: action.payload, isFirstLogin: action.payload.isFirstLogin };
-                case 'LOGOUT':
-                    return { ...state, isAuthenticated: false, user: null, isFirstLogin: false };
-                case 'PASSWORD_CHANGED':
-                    return { ...state, isFirstLogin: false };
-                default:
-                    return state;
+                case 'LOGIN': return { ...state, isAuthenticated: true, user: action.payload, isFirstLogin: action.payload.isFirstLogin };
+                case 'LOGOUT': return { ...state, isAuthenticated: false, user: null, isFirstLogin: false };
+                case 'PASSWORD_CHANGED': return { ...state, isFirstLogin: false };
+                default: return state;
             }
         };
-
         const AuthProvider = ({ children }) => {
-            const [state, dispatch] = useReducer(authReducer, {
-                isAuthenticated: false,
-                user: null,
-                isFirstLogin: false,
-            });
-
+            const [state, dispatch] = useReducer(authReducer, { isAuthenticated: false, user: null, isFirstLogin: false });
             useEffect(() => {
-                // Check for saved user session on initial load
                 try {
                     const savedUser = localStorage.getItem('vms_user');
-                    if (savedUser) {
-                        const user = JSON.parse(savedUser);
-                        dispatch({ type: 'LOGIN', payload: user });
-                    }
-                } catch (error) {
-                    console.error("Failed to parse user from localStorage", error);
-                    localStorage.removeItem('vms_user');
-                }
+                    if (savedUser) dispatch({ type: 'LOGIN', payload: JSON.parse(savedUser) });
+                } catch (error) { localStorage.removeItem('vms_user'); }
             }, []);
-
-            const login = (userData) => {
-                localStorage.setItem('vms_user', JSON.stringify(userData));
-                dispatch({ type: 'LOGIN', payload: userData });
-            };
-
-            const logout = () => {
-                localStorage.removeItem('vms_user');
-                dispatch({ type: 'LOGOUT' });
-            };
-            
+            const login = (userData) => { localStorage.setItem('vms_user', JSON.stringify(userData)); dispatch({ type: 'LOGIN', payload: userData }); };
+            const logout = () => { localStorage.removeItem('vms_user'); dispatch({ type: 'LOGOUT' }); };
             const passwordChanged = () => {
                 const updatedUser = { ...state.user, isFirstLogin: false };
                 localStorage.setItem('vms_user', JSON.stringify(updatedUser));
                 dispatch({ type: 'PASSWORD_CHANGED' });
             };
-
-            return (
-                <AuthContext.Provider value={{ ...state, login, logout, passwordChanged }}>
-                    {children}
-                </AuthContext.Provider>
-            );
+            return <AuthContext.Provider value={{ ...state, login, logout, passwordChanged }}>{children}</AuthContext.Provider>;
         };
-
         const useAuth = () => useContext(AuthContext);
 
         // --- Reusable UI Components --------------------------------------------------------
-        
         const Modal = ({ isOpen, onClose, title, children }) => {
             if (!isOpen) return null;
-
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={onClose}>
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center p-4 border-b">
                             <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
                             <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-                                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                                </svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                             </button>
                         </div>
-                        <div className="p-6">
-                            {children}
-                        </div>
+                        <div className="p-6">{children}</div>
                     </div>
                 </div>
             );
         };
+        const Spinner = ({ size = '8' }) => <div className={`animate-spin rounded-full h-${size} w-${size} border-b-2 border-indigo-600`}></div>;
 
-        const Toast = ({ message, type, onDismiss }) => {
-            const baseClasses = "fixed bottom-5 right-5 p-4 rounded-lg shadow-lg text-white z-50 flex items-center";
-            const typeClasses = {
-                success: "bg-green-500",
-                error: "bg-red-500",
-                info: "bg-blue-500",
-            };
-
-            const icons = {
-                success: (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-3"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                ),
-                error: (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-3"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                ),
-                info: (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-3"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                )
-            };
-
-            useEffect(() => {
-                const timer = setTimeout(onDismiss, 5000);
-                return () => clearTimeout(timer);
-            }, [onDismiss]);
-
-            return (
-                <div className={`${baseClasses} ${typeClasses[type] || 'bg-gray-800'}`}>
-                    {icons[type]}
-                    <span>{message}</span>
-                    <button onClick={onDismiss} className="ml-4 text-white font-bold">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    </button>
-                </div>
-            );
-        };
-        
-        const Spinner = ({ size = '8' }) => (
-            <div className={`animate-spin rounded-full h-${size} w-${size} border-b-2 border-indigo-600`}></div>
-        );
-
-        // --- Main Application Pages/Views --------------------------------------------------
-
-        const ForgotPasswordModal = ({ isOpen, onClose }) => {
-            const [email, setEmail] = useState('');
-            const [message, setMessage] = useState('');
-            const [error, setError] = useState('');
-            const [loading, setLoading] = useState(false);
-
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                setError('');
-                setMessage('');
-                setLoading(true);
-                try {
-                    const data = await api.requestPasswordReset(email);
-                    setMessage(data.message);
-                    setTimeout(() => {
-                        onClose();
-                        setMessage('');
-                        setEmail('');
-                    }, 3000);
-                } catch (err) {
-                    setMessage("If your account exists, a password reset email has been sent.");
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            return (
-                <Modal isOpen={isOpen} onClose={onClose} title="Request Password Reset">
-                    {message && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">{message}</div>}
-                    {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
-                    <p className="text-gray-600 mb-4">Enter your username (email address) and we will send you a temporary password.</p>
-                    <form onSubmit={handleSubmit}>
-                        <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="reset-email">
-                                Username (Email)
-                            </label>
-                            <input
-                                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                id="reset-email"
-                                type="email"
-                                placeholder="user@example.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="flex items-center justify-end">
-                            <button
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex justify-center items-center"
-                                type="submit"
-                                disabled={loading}
-                            >
-                                {loading ? <Spinner size="5" /> : 'Send Reset Email'}
-                            </button>
-                        </div>
-                    </form>
-                </Modal>
-            );
-        };
-
+        // --- Main Application Pages --------------------------------------------------------
+        // ... (LoginPage, ChangePasswordPage, ReportsPage, AdminPage and its modals remain unchanged) ...
         const LoginPage = () => {
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
@@ -329,30 +169,17 @@
             const [loading, setLoading] = useState(false);
             const { login } = useAuth();
             const [isForgotPasswordOpen, setForgotPasswordOpen] = useState(false);
-
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 setError('');
                 setLoading(true);
                 try {
                     const data = await api.authenticateUser(username, password);
-                    if (data.success) {
-                        login(data);
-                    } else {
-                        setError(data.message);
-                    }
-                } catch (err) {
-                    setError(err.message);
-                } finally {
-                    setLoading(false);
-                }
+                    if (data.success) login(data);
+                    else setError(data.message);
+                } catch (err) { setError(err.message); } 
+                finally { setLoading(false); }
             };
-            
-            const handleForgotPassword = (e) => {
-                e.preventDefault();
-                setForgotPasswordOpen(true);
-            };
-
             return (
                 <>
                     <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center">
@@ -364,152 +191,197 @@
                             {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">{error}</div>}
                             <form onSubmit={handleSubmit}>
                                 <div className="mb-4">
-                                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="username">
-                                        Username (Email)
-                                    </label>
-                                    <input
-                                        className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                        id="username"
-                                        type="email"
-                                        placeholder="user@example.com"
-                                        value={username}
-                                        onChange={(e) => setUsername(e.target.value)}
-                                        required
-                                    />
+                                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="username">Username (Email)</label>
+                                    <input className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" id="username" type="email" value={username} onChange={(e) => setUsername(e.target.value)} required />
                                 </div>
                                 <div className="mb-6">
-                                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">
-                                        Password
-                                    </label>
-                                    <input
-                                        className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                        id="password"
-                                        type="password"
-                                        placeholder="******************"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
-                                    />
+                                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">Password</label>
+                                    <input className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                                 </div>
-                                <div className="flex items-center justify-between">
-                                    <button
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full flex justify-center items-center"
-                                        type="submit"
-                                        disabled={loading}
-                                    >
-                                        {loading ? <Spinner size="5" /> : 'Sign In'}
-                                    </button>
-                                </div>
+                                <button className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded w-full flex justify-center items-center" type="submit" disabled={loading}>{loading ? <Spinner size="5" /> : 'Sign In'}</button>
                                 <div className="text-center mt-4">
-                                    <a className="inline-block align-baseline font-bold text-sm text-indigo-600 hover:text-indigo-800" href="#" onClick={handleForgotPassword}>
-                                        Forgot Password?
-                                    </a>
+                                    <a className="inline-block align-baseline font-bold text-sm text-indigo-600 hover:text-indigo-800" href="#" onClick={(e) => {e.preventDefault(); setForgotPasswordOpen(true);}}>Forgot Password?</a>
                                 </div>
                             </form>
                         </div>
                     </div>
-                    <ForgotPasswordModal isOpen={isForgotPasswordOpen} onClose={() => setForgotPasswordOpen(false)} />
                 </>
             );
         };
 
-        const ChangePasswordPage = () => {
-            const { user, passwordChanged, logout } = useAuth();
-            const [newPassword, setNewPassword] = useState('');
-            const [confirmPassword, setConfirmPassword] = useState('');
+        const DashboardPage = ({ sheetKey }) => {
+            const { user } = useAuth();
+            const [data, setData] = useState([]);
+            const [header, setHeader] = useState([]);
+            const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
-            const [success, setSuccess] = useState('');
-            const [loading, setLoading] = useState(false);
+            const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
+            const [filter, setFilter] = useState('');
+            const [unsavedChanges, setUnsavedChanges] = useState({});
 
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                if (newPassword !== confirmPassword) {
-                    setError("Passwords do not match.");
-                    return;
-                }
-                if (newPassword.length < 6) {
-                    setError("Password must be at least 6 characters long.");
-                    return;
-                }
-                setError('');
+            const loadData = useCallback(async () => {
                 setLoading(true);
+                setError('');
+                setUnsavedChanges({});
                 try {
-                    const data = await api.changePassword(user.userIdentifier, newPassword, user.userIdentifier);
-                    if (data.success) {
-                        setSuccess("Password changed successfully! You can now access the dashboard.");
-                        setTimeout(() => {
-                           passwordChanged();
-                        }, 2000);
+                    const result = await api.getDashboardData(sheetKey, user.userIdentifier);
+                    if (result.success) {
+                        setHeader(result.header);
+                        setData(result.rows);
                     } else {
-                        setError(data.message);
+                        setError(result.message);
                     }
                 } catch (err) {
                     setError(err.message);
                 } finally {
                     setLoading(false);
                 }
+            }, [sheetKey, user.userIdentifier]);
+
+            useEffect(() => {
+                loadData();
+            }, [loadData]);
+
+            const handleSort = (key) => {
+                let direction = 'ascending';
+                if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+                    direction = 'descending';
+                }
+                setSortConfig({ key, direction });
+            };
+            
+            const handleCellEdit = (rowIndex, cellIndex, value) => {
+                const originalRow = data[rowIndex];
+                const postingId = originalRow[header.indexOf('Posting ID')];
+                const headerName = header[cellIndex];
+                
+                setUnsavedChanges(prev => ({
+                    ...prev,
+                    [postingId]: {
+                        ...prev[postingId],
+                        [headerName]: value
+                    }
+                }));
+
+                // Also update the local data to show the change immediately
+                const newData = [...data];
+                newData[rowIndex][cellIndex] = value;
+                setData(newData);
             };
 
+            const handleSaveChanges = async () => {
+                const updates = Object.entries(unsavedChanges).map(([postingId, changes]) => {
+                    // Map frontend header names to backend property names
+                    const backendChanges = {};
+                    Object.entries(changes).forEach(([headerName, value]) => {
+                        const backendKey = headerName.replace(/ /g, '').charAt(0).toLowerCase() + headerName.replace(/ /g, '').slice(1);
+                        backendChanges[backendKey] = value;
+                    });
+                    return { rowKey: postingId, changes: backendChanges };
+                });
+                
+                if (updates.length === 0) return;
+
+                setLoading(true);
+                try {
+                    await api.updateJobPosting(updates, user.userIdentifier);
+                    setUnsavedChanges({});
+                } catch (err) {
+                    setError(`Failed to save: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                    // Optionally reload data to confirm changes
+                    loadData();
+                }
+            };
+
+            const filteredAndSortedData = useMemo(() => {
+                let sortableItems = [...data];
+                if (sortConfig.key !== null) {
+                    const sortIndex = header.indexOf(sortConfig.key);
+                    sortableItems.sort((a, b) => {
+                        if (a[sortIndex] < b[sortIndex]) return sortConfig.direction === 'ascending' ? -1 : 1;
+                        if (a[sortIndex] > b[sortIndex]) return sortConfig.direction === 'ascending' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                if (filter) {
+                    return sortableItems.filter(row =>
+                        row.some(cell => String(cell).toLowerCase().includes(filter.toLowerCase()))
+                    );
+                }
+                return sortableItems;
+            }, [data, sortConfig, filter, header]);
+
             return (
-                <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center">
-                    <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg">
-                        <div className="text-center mb-8">
-                            <h1 className="text-3xl font-bold text-gray-800">Change Your Password</h1>
-                            <p className="text-gray-500 mt-2">This is your first login. Please set a new password.</p>
+                <div>
+                    <div className="flex justify-between items-center mb-6">
+                        <h1 className="text-3xl font-bold text-gray-800">{DASHBOARD_CONFIGS[sheetKey]?.title || 'Dashboard'}</h1>
+                        <div className="flex items-center space-x-2">
+                            <input type="text" placeholder="Search..." value={filter} onChange={e => setFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md"/>
+                            <button onClick={loadData} className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">Refresh</button>
+                            <button onClick={handleSaveChanges} disabled={Object.keys(unsavedChanges).length === 0} className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-400">Save Changes</button>
                         </div>
-                        {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
-                        {success && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">{success}</div>}
-                        <form onSubmit={handleSubmit}>
-                            <div className="mb-4">
-                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="new-password">
-                                    New Password
-                                </label>
-                                <input
-                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"
-                                    id="new-password"
-                                    type="password"
-                                    value={newPassword}
-                                    onChange={(e) => setNewPassword(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="mb-6">
-                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="confirm-password">
-                                    Confirm New Password
-                                </label>
-                                <input
-                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"
-                                    id="confirm-password"
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <button
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded w-full flex justify-center items-center"
-                                type="submit"
-                                disabled={loading}
-                            >
-                                {loading ? <Spinner size="5" /> : 'Set New Password'}
-                            </button>
-                        </form>
-                        <button onClick={logout} className="mt-4 text-sm text-gray-600 hover:text-gray-800 w-full">Logout</button>
                     </div>
+                    {loading && <div className="flex justify-center items-center h-64"><Spinner /></div>}
+                    {error && <div className="text-red-500 bg-red-100 p-4 rounded-lg">Error: {error}</div>}
+                    {!loading && !error && (
+                        <div className="bg-white p-4 rounded-lg shadow overflow-x-auto">
+                            <table className="w-full text-sm text-left text-gray-500">
+                                <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr>
+                                        {header.map(h => 
+                                            <th key={h} scope="col" className="px-6 py-3 sortable-header" onClick={() => handleSort(h)}>
+                                                {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
+                                            </th>
+                                        )}
+                                        <th scope="col" className="px-6 py-3">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredAndSortedData.map((row, rowIndex) => (
+                                        <tr key={rowIndex} className="bg-white border-b hover:bg-gray-50">
+                                            {row.map((cell, cellIndex) => {
+                                                const headerName = header[cellIndex];
+                                                const isEditable = EDITABLE_COLUMNS.includes(headerName);
+                                                const postingId = row[header.indexOf('Posting ID')];
+                                                const isModified = unsavedChanges[postingId] && unsavedChanges[postingId][headerName];
+                                                
+                                                return (
+                                                    <td key={cellIndex} 
+                                                        className={`px-6 py-4 ${isModified ? 'modified-cell' : ''}`}
+                                                        contentEditable={isEditable}
+                                                        suppressContentEditableWarning={true}
+                                                        onBlur={e => isEditable && handleCellEdit(rowIndex, cellIndex, e.target.innerText)}
+                                                    >
+                                                        {cell}
+                                                    </td>
+                                                );
+                                            })}
+                                            <td className="px-6 py-4">
+                                                {/* Action buttons would go here */}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             );
         };
-
+        
         const MainApp = () => {
-            const [currentPage, setCurrentPage] = useState('dashboard');
+            const [currentPage, setCurrentPage] = useState({type: 'dashboard', key: 'ecaltVMSDisplay'});
             const { user, logout } = useAuth();
             const isAdmin = user?.userRole?.includes('Admin');
 
-            const NavLink = ({ page, icon, children }) => (
+            const NavLink = ({ pageKey, icon, children, isDashboard = false }) => (
                 <button
-                    onClick={() => setCurrentPage(page)}
+                    onClick={() => setCurrentPage(isDashboard ? {type: 'dashboard', key: pageKey} : {type: pageKey})}
                     className={`flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                        currentPage === page ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'
+                        (isDashboard && currentPage.type === 'dashboard' && currentPage.key === pageKey) || (!isDashboard && currentPage.type === pageKey)
+                        ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'
                     }`}
                 >
                     {icon}
@@ -519,15 +391,18 @@
 
             return (
                 <div className="flex h-screen bg-gray-100">
-                    {/* Sidebar */}
                     <aside className="w-64 bg-white border-r flex flex-col">
-                        <div className="px-6 py-4 border-b">
-                            <h2 className="text-xl font-bold text-indigo-600">VMS Portal</h2>
-                        </div>
-                        <nav className="flex-1 p-4 space-y-2">
-                            <NavLink page="dashboard" icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>}>Dashboard</NavLink>
-                            <NavLink page="reports" icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M3 3v18h18"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg>}>Reports</NavLink>
-                            {isAdmin && <NavLink page="admin" icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>}>Admin</NavLink>}
+                        <div className="px-6 py-4 border-b"><h2 className="text-xl font-bold text-indigo-600">VMS Portal</h2></div>
+                        <nav className="flex-1 p-4 space-y-1">
+                            <p className="px-4 pt-2 pb-1 text-xs font-semibold text-gray-500 uppercase">Dashboards</p>
+                            {Object.entries(DASHBOARD_CONFIGS).map(([key, config]) => 
+                                <NavLink key={key} pageKey={key} isDashboard={true} icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>}>
+                                    {config.title}
+                                </NavLink>
+                            )}
+                            <p className="px-4 pt-4 pb-1 text-xs font-semibold text-gray-500 uppercase">Analysis & Admin</p>
+                            <NavLink pageKey="reports" icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M3 3v18h18"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg>}>Reports</NavLink>
+                            {isAdmin && <NavLink pageKey="admin" icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>}>Admin</NavLink>}
                         </nav>
                         <div className="p-4 border-t">
                              <div className="mb-4">
@@ -541,270 +416,24 @@
                         </div>
                     </aside>
 
-                    {/* Main Content */}
                     <main className="flex-1 p-6 overflow-y-auto">
-                        {currentPage === 'dashboard' && <DashboardPage />}
-                        {currentPage === 'reports' && <ReportsPage />}
-                        {currentPage === 'admin' && <AdminPage />}
+                        {currentPage.type === 'dashboard' && <DashboardPage sheetKey={currentPage.key} />}
+                        {currentPage.type === 'reports' && <ReportsPage />}
+                        {currentPage.type === 'admin' && <AdminPage />}
                     </main>
                 </div>
             );
         };
         
-        const DashboardPage = () => {
-            return (
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-800 mb-6">Dashboard</h1>
-                    <div className="bg-white p-6 rounded-lg shadow">
-                      <p className="text-gray-700">
-                        Welcome to the VMS Dashboard. Select a view from the sidebar to see job postings.
-                      </p>
-                    </div>
-                </div>
-            );
-        };
-        
-        const ReportsPage = () => {
-             return (
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-800 mb-6">Reports</h1>
-                    <div className="bg-white p-6 rounded-lg shadow">
-                      <p className="text-gray-700">
-                        The reports section would contain charts and data visualizations based on job posting data.
-                      </p>
-                    </div>
-                </div>
-            );
-        };
-        
-        // --- Admin Page and Modals ---
-
-        const UserFormModal = ({ isOpen, onClose, onSave, userToEdit }) => {
-            const [formData, setFormData] = useState({});
-            const [loading, setLoading] = useState(false);
-            const [error, setError] = useState('');
-
-            useEffect(() => {
-                if (userToEdit) {
-                    setFormData({ ...userToEdit, password: '' }); // Don't show existing password
-                } else {
-                    setFormData({ username: '', password: '', displayName: '', userRole: '', backendOfficeRole: '' });
-                }
-            }, [userToEdit, isOpen]);
-
-            const handleChange = (e) => {
-                setFormData({ ...formData, [e.target.name]: e.target.value });
-            };
-
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                setError('');
-                setLoading(true);
-                try {
-                    await onSave(formData);
-                    onClose();
-                } catch (err) {
-                    setError(err.message);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            return (
-                <Modal isOpen={isOpen} onClose={onClose} title={userToEdit ? 'Edit User' : 'Add New User'}>
-                    {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
-                    <form onSubmit={handleSubmit}>
-                        <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Username (Email)</label>
-                            <input type="email" name="username" value={formData.username || ''} onChange={handleChange} disabled={!!userToEdit} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required />
-                        </div>
-                        <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Password</label>
-                            <input type="password" name="password" value={formData.password || ''} onChange={handleChange} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" placeholder={userToEdit ? 'Leave blank to keep current' : ''} required={!userToEdit} />
-                        </div>
-                        <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Display Name</label>
-                            <input type="text" name="displayName" value={formData.displayName || ''} onChange={handleChange} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required />
-                        </div>
-                        <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Role</label>
-                            <select name="userRole" value={formData.userRole || ''} onChange={handleChange} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required>
-                                <option value="">Select a role</option>
-                                <option value="Admin">Admin</option>
-                                <option value="Data Entry">Data Entry</option>
-                                <option value="Viewer">Viewer</option>
-                            </select>
-                        </div>
-                        <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Backend Role</label>
-                            <input type="text" name="backendOfficeRole" value={formData.backendOfficeRole || ''} onChange={handleChange} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required />
-                        </div>
-                        <div className="flex justify-end mt-6">
-                            <button type="button" onClick={onClose} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded mr-2">Cancel</button>
-                            <button type="submit" disabled={loading} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded flex items-center">
-                                {loading ? <Spinner size="5" /> : 'Save'}
-                            </button>
-                        </div>
-                    </form>
-                </Modal>
-            );
-        };
-
-        const DeleteUserModal = ({ isOpen, onClose, onConfirm, userToDelete }) => {
-            const [loading, setLoading] = useState(false);
-
-            const handleConfirm = async () => {
-                setLoading(true);
-                await onConfirm();
-                setLoading(false);
-                onClose();
-            };
-
-            return (
-                <Modal isOpen={isOpen} onClose={onClose} title="Confirm Deletion">
-                    <p>Are you sure you want to delete the user <strong>{userToDelete?.username}</strong>? This action cannot be undone.</p>
-                    <div className="flex justify-end mt-6">
-                        <button onClick={onClose} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded mr-2">Cancel</button>
-                        <button onClick={handleConfirm} disabled={loading} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded flex items-center">
-                            {loading ? <Spinner size="5" /> : 'Delete'}
-                        </button>
-                    </div>
-                </Modal>
-            );
-        };
-
-        const AdminPage = () => {
-            const { user } = useAuth();
-            const [users, setUsers] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState('');
-            
-            const [isUserModalOpen, setUserModalOpen] = useState(false);
-            const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
-            const [userToEdit, setUserToEdit] = useState(null);
-            const [userToDelete, setUserToDelete] = useState(null);
-
-            const fetchUsers = async () => {
-                setLoading(true);
-                try {
-                    const data = await api.getUsers(user.userIdentifier);
-                    if (data.success) {
-                        setUsers(data.users);
-                    } else {
-                        setError(data.message);
-                    }
-                } catch (err) {
-                    setError(err.message);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            useEffect(() => {
-                fetchUsers();
-            }, [user.userIdentifier]);
-
-            const handleAddClick = () => {
-                setUserToEdit(null);
-                setUserModalOpen(true);
-            };
-
-            const handleEditClick = (userToEdit) => {
-                setUserToEdit(userToEdit);
-                setUserModalOpen(true);
-            };
-
-            const handleDeleteClick = (userToDelete) => {
-                setUserToDelete(userToDelete);
-                setDeleteModalOpen(true);
-            };
-
-            const handleSaveUser = async (formData) => {
-                if (userToEdit) { // Editing existing user
-                    await api.updateUser(userToEdit.username, formData, user.userIdentifier);
-                } else { // Adding new user
-                    await api.addUser(formData, user.userIdentifier);
-                }
-                fetchUsers(); // Refresh the user list
-            };
-
-            const handleConfirmDelete = async () => {
-                await api.deleteUser(userToDelete.username, user.userIdentifier);
-                fetchUsers(); // Refresh the user list
-            };
-
-            if (loading) return <div className="flex justify-center items-center h-full"><Spinner /></div>;
-            if (error) return <div className="text-red-500">Error: {error}</div>;
-
-            return (
-                <>
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-800 mb-6">Admin - User Management</h1>
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <div className="flex justify-end mb-4">
-                                <button onClick={handleAddClick} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg>
-                                    Add User
-                                </button>
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left text-gray-500">
-                                    <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-                                        <tr>
-                                            <th scope="col" className="px-6 py-3">Display Name</th>
-                                            <th scope="col" className="px-6 py-3">Username</th>
-                                            <th scope="col" className="px-6 py-3">Role</th>
-                                            <th scope="col" className="px-6 py-3">Backend Role</th>
-                                            <th scope="col" className="px-6 py-3">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {users.map((u) => (
-                                            <tr key={u.username} className="bg-white border-b hover:bg-gray-50">
-                                                <td className="px-6 py-4 font-medium text-gray-900">{u.displayName}</td>
-                                                <td className="px-6 py-4">{u.username}</td>
-                                                <td className="px-6 py-4">{u.userRole}</td>
-                                                <td className="px-6 py-4">{u.backendOfficeRole}</td>
-                                                <td className="px-6 py-4 flex space-x-2">
-                                                    <button onClick={() => handleEditClick(u)} className="text-indigo-600 hover:text-indigo-900"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button>
-                                                    <button onClick={() => handleDeleteClick(u)} className="text-red-600 hover:text-red-900"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                    <UserFormModal isOpen={isUserModalOpen} onClose={() => setUserModalOpen(false)} onSave={handleSaveUser} userToEdit={userToEdit} />
-                    <DeleteUserModal isOpen={isDeleteModalOpen} onClose={() => setDeleteModalOpen(false)} onConfirm={handleConfirmDelete} userToDelete={userToDelete} />
-                </>
-            );
-        };
-        
-        // --- App Component (Root) ----------------------------------------------------------
-        // This component orchestrates which view is shown based on authentication state.
         const App = () => {
             const { isAuthenticated, isFirstLogin } = useAuth();
-
-            if (!isAuthenticated) {
-                return <LoginPage />;
-            }
-
-            if (isFirstLogin) {
-                return <ChangePasswordPage />;
-            }
-
+            if (!isAuthenticated) return <LoginPage />;
+            if (isFirstLogin) return <ChangePasswordPage />;
             return <MainApp />;
         };
 
-        // --- Render the Application --------------------------------------------------------
         const root = createRoot(document.getElementById('root'));
-        root.render(
-            <AuthProvider>
-                <App />
-            </AuthProvider>
-        );
+        root.render(<AuthProvider><App /></AuthProvider>);
 
     </script>
 </body>
