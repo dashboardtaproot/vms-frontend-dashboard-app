@@ -64,6 +64,10 @@
         }
         .table-layout th, .table-layout td {
             overflow-wrap: break-word;
+            border-right: 1px solid #e5e7eb; /* NEW: Add right border */
+        }
+        .table-layout th:last-child, .table-layout td:last-child {
+            border-right: none; /* NEW: Remove right border from last cell */
         }
         .column-list-item.dragging {
             opacity: 0.5;
