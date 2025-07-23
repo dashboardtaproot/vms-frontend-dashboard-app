@@ -1085,7 +1085,7 @@
 
         // --- Main App Structure ---------------------------------------------------
         const TopNav = ({ user, logout, currentPage, setCurrentPage }) => {
-            const isAdmin = user?.userRole?.includes('Admin');
+            const isAdmin = !!user?.userRole?.includes('Admin');
             return (
                 <header className="bg-white shadow-md">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
