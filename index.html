@@ -499,6 +499,27 @@
                 }
             };
             
+            const COLUMN_WIDTHS = {
+                'Posting ID': 'w-24',
+                'Posting Title': 'w-48',
+                'Posting Date': 'w-32',
+                'Deadline': 'w-32',
+                'Max Submissions': 'w-28',
+                'Max C2C Rate': 'w-28',
+                'Client Info': 'w-48',
+                'Required Skill Set': 'w-96', // Significantly larger
+                'Any Required Certificates': 'w-64', // Larger
+                'Work Position Type': 'w-40',
+                'Working By': 'w-40',
+                '# Submitted': 'w-28',
+                'Remarks': 'w-64',
+                '1st Candidate Name': 'w-48',
+                '2nd Candidate Name': 'w-48',
+                '3rd Candidate Name': 'w-48',
+                'Status': 'w-28',
+                'Action': 'w-24'
+            };
+
             return (
                 <div className="space-y-4">
                     <div className="bg-white p-4 rounded-lg shadow-sm border">
@@ -533,13 +554,13 @@
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                                     <tr>
                                         {displayHeader.map(h => 
-                                            <th key={h} scope="col" className="px-4 py-3" >
+                                            <th key={h} scope="col" className={`px-4 py-3 ${COLUMN_WIDTHS[h] || 'w-48'}`} >
                                                 <div onClick={() => handleSort(h)} className="sortable-header font-bold">
                                                     {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
                                                 </div>
                                             </th>
                                         )}
-                                        <th scope="col" className="px-4 py-3">Action</th>
+                                        <th scope="col" className={`px-4 py-3 ${COLUMN_WIDTHS['Action']}`}>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
