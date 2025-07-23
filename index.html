@@ -64,6 +64,7 @@
         }
         .table-layout th, .table-layout td {
             overflow-wrap: break-word; /* Allow text wrapping */
+            white-space: normal; /* NEW: Ensure text wraps */
             border-right: 1px solid #e5e7eb; /* Add right border */
         }
         .table-layout th:last-child, .table-layout td:last-child {
@@ -186,7 +187,7 @@
                         <div className="flex justify-between items-center p-4 border-b">
                             <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
                             <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                             </button>
                         </div>
                         <div className="p-6 overflow-y-auto">{children}</div>
@@ -499,25 +500,25 @@
                 }
             };
             
-            const COLUMN_WIDTHS = {
-                'Posting ID': 'min-w-[5rem]',
-                'Posting Title': 'min-w-[12rem]',
-                'Posting Date': 'min-w-[8rem]',
-                'Deadline': 'min-w-[8rem]',
-                'Max Submissions': 'min-w-[6rem]',
-                'Max C2C Rate': 'min-w-[6rem]',
-                'Client Info': 'min-w-[12rem]',
-                'Required Skill Set': 'min-w-[24rem]',
-                'Any Required Certificates': 'min-w-[16rem]',
-                'Work Position Type': 'min-w-[8rem]',
-                'Working By': 'min-w-[10rem]',
-                '# Submitted': 'min-w-[6rem]',
-                'Remarks': 'min-w-[12rem]',
-                '1st Candidate Name': 'min-w-[10rem]',
-                '2nd Candidate Name': 'min-w-[10rem]',
-                '3rd Candidate Name': 'min-w-[10rem]',
-                'Status': 'min-w-[6rem]',
-                'Action': 'min-w-[5rem]'
+            const COLUMN_WIDTH_STYLES = {
+                'Posting ID': { width: '4%' },
+                'Posting Title': { width: '8%' },
+                'Posting Date': { width: '6%' },
+                'Deadline': { width: '6%' },
+                'Max Submissions': { width: '5%' },
+                'Max C2C Rate': { width: '5%' },
+                'Client Info': { width: '8%' },
+                'Required Skill Set': { width: '15%' },
+                'Any Required Certificates': { width: '10%' },
+                'Work Position Type': { width: '6%' },
+                'Working By': { width: '6%' },
+                '# Submitted': { width: '5%' },
+                'Remarks': { width: '8%' },
+                '1st Candidate Name': { width: '6%' },
+                '2nd Candidate Name': { width: '6%' },
+                '3rd Candidate Name': { width: '6%' },
+                'Status': { width: '4%' },
+                'Action': { width: '4%' }
             };
 
             return (
@@ -554,13 +555,13 @@
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                                     <tr>
                                         {displayHeader.map(h => 
-                                            <th key={h} scope="col" className={`px-4 py-3 ${COLUMN_WIDTHS[h] || 'w-48'}`} >
+                                            <th key={h} scope="col" className="px-4 py-3" style={COLUMN_WIDTH_STYLES[h] || {}}>
                                                 <div onClick={() => handleSort(h)} className="sortable-header font-bold">
                                                     {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
                                                 </div>
                                             </th>
                                         )}
-                                        <th scope="col" className={`px-4 py-3 ${COLUMN_WIDTHS['Action']}`}>Action</th>
+                                        <th scope="col" className="px-4 py-3" style={COLUMN_WIDTH_STYLES['Action']}>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
