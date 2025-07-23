@@ -82,18 +82,12 @@
             align-items: center;
             justify-content: space-between;
             width: 100%;
+            height: 100%;
             cursor: pointer;
+            padding: 0.75rem 1rem; /* Replicate th padding */
         }
-        .header-menu-trigger:hover .filter-icon {
-            opacity: 1;
-        }
-        .filter-icon {
-            opacity: 0.4;
-            transition: opacity 150ms ease-in-out;
-        }
-        .filter-icon.active {
-            opacity: 1;
-            color: #4f46e5; /* indigo-600 */
+        .header-menu-trigger:hover {
+            background-color: #f1f5f9; /* slate-100 */
         }
     </style>
 </head>
@@ -897,9 +891,9 @@
                     {loading && <div className="flex justify-center items-center h-64"><Spinner /></div>}
                     {error && <div className="text-red-500 bg-red-100 p-4 rounded-lg">Error: {error}</div>}
                     {!loading && !error && (
-                        <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+                        <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-y-auto relative" style={{ maxHeight: '70vh' }}>
                             <table className="w-full text-sm text-left text-gray-500 table-layout">
-                                <thead className="text-xs text-gray-700 uppercase bg-slate-100">
+                                <thead className="text-xs text-gray-700 uppercase bg-slate-200 sticky top-0 z-10">
                                     <tr>
                                         {displayHeader.map(h => {
                                             const isSkillColumn = h === 'Required Skill Set';
@@ -909,15 +903,12 @@
                                             else if (isTitleColumn) style = { width: '200px' };
                                             
                                             return (
-                                                <th key={h} scope="col" className="px-4 py-3" style={style}>
+                                                <th key={h} scope="col" className="p-0" style={style}>
                                                     <Dropdown 
                                                         width="64"
                                                         trigger={
                                                             <div className="header-menu-trigger font-bold">
                                                                 <span>{h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}</span>
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className={`filter-icon ${columnFilters[h] ? 'active' : ''}`} viewBox="0 0 16 16">
-                                                                    <path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.74.439L7 12.439a.5.5 0 0 1-.26-.439V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5v-2z"/>
-                                                                </svg>
                                                             </div>
                                                         }>
                                                         <HeaderMenu 
@@ -950,7 +941,21 @@
                                                         className={`px-4 py-3 ${isModified ? 'modified-cell' : ''} ${deadlineClass}`}
                                                         contentEditable={isEditable}
                                                         suppressContentEditableWarning={true}
-                                                        onBlur={e => isEditable && handleCellEdit(rowIndex, cellIndex, e.target.innerText)}
+                                                        onFocus={e => {
+                                                            if (!isEditable) return;
+                                                            if (e.target.innerText === 'Need To Update') {
+                                                                e.target.innerText = '';
+                                                            }
+                                                        }}
+                                                        onBlur={e => {
+                                                            if (!isEditable) return;
+                                                            let currentValue = e.target.innerText.trim();
+                                                            if (currentValue === '') {
+                                                                currentValue = 'Need To Update';
+                                                                e.target.innerText = 'Need To Update';
+                                                            }
+                                                            handleCellEdit(rowIndex, cellIndex, currentValue);
+                                                        }}
                                                     >
                                                         {isDate ? formatDate(cell) : cell}
                                                     </td>
