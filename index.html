@@ -59,16 +59,19 @@
             cursor: pointer;
             user-select: none;
         }
+        /* --- MODIFIED FOR NO HORIZONTAL SCROLL --- */
+        .table-layout {
+            table-layout: fixed; /* Crucial for controlling column widths */
+            width: 100%;
+        }
         .table-layout th, .table-layout td {
             border-right: 1px solid #e5e7eb; /* Add right border */
-            white-space: nowrap; /* Prevent text wrapping by default */
+            white-space: normal; /* Allow text wrapping by default */
+            word-break: break-word; /* Break long words to prevent overflow */
+            vertical-align: top; /* Align content to the top */
         }
         .table-layout th:last-child, .table-layout td:last-child {
             border-right: none; /* Remove right border from last cell */
-        }
-        .wrap-text {
-            white-space: normal !important; /* Allow wrapping for specific columns */
-            word-break: break-word;
         }
         .column-list-item.dragging {
             opacity: 0.5;
@@ -805,18 +808,32 @@
                     {loading && <div className="flex justify-center items-center h-64"><Spinner /></div>}
                     {error && <div className="text-red-500 bg-red-100 p-4 rounded-lg">Error: {error}</div>}
                     {!loading && !error && (
-                        <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-x-auto">
+                        // --- MODIFIED CONTAINER: removed overflow-x-auto, added overflow-hidden ---
+                        <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
                             <table className="w-full text-sm text-left text-gray-500 table-layout">
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                                     <tr>
-                                        {displayHeader.map(h => 
-                                            <th key={h} scope="col" className="px-4 py-3" >
-                                                <div onClick={() => handleSort(h)} className="sortable-header font-bold">
-                                                    {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
-                                                </div>
-                                            </th>
-                                        )}
-                                        <th scope="col" className="px-4 py-3">Action</th>
+                                        {/* --- MODIFIED HEADER: Applying dynamic widths --- */}
+                                        {displayHeader.map(h => {
+                                            const isSkillColumn = h === 'Required Skill Set';
+                                            const isTitleColumn = h === 'Posting Title';
+                                            let style = { minWidth: '140px' }; // Default min-width for columns
+                                            if (isSkillColumn) {
+                                                style = { width: '300px' }; // Specific width for Skill Set
+                                            } else if (isTitleColumn) {
+                                                style = { width: '250px' }; // A bit more width for the title
+                                            }
+                                            
+                                            return (
+                                                <th key={h} scope="col" className="px-4 py-3" style={style}>
+                                                    <div onClick={() => handleSort(h)} className="sortable-header font-bold flex items-center">
+                                                        <span>{h}</span>
+                                                        <span className="ml-2">{sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}</span>
+                                                    </div>
+                                                </th>
+                                            );
+                                        })}
+                                        <th scope="col" className="px-4 py-3" style={{width: '80px'}}>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -830,8 +847,9 @@
                                                 const isModified = unsavedChanges[postingId] && unsavedChanges[postingId][headerName] !== undefined;
                                                 
                                                 return (
+                                                    // --- MODIFIED CELL: Removed conditional wrap-text class ---
                                                     <td key={cellIndex} 
-                                                        className={`px-4 py-3 ${isModified ? 'modified-cell' : ''} ${headerName === 'Required Skill Set' ? 'wrap-text' : ''}`}
+                                                        className={`px-4 py-3 ${isModified ? 'modified-cell' : ''}`}
                                                         contentEditable={isEditable}
                                                         suppressContentEditableWarning={true}
                                                         onBlur={e => isEditable && handleCellEdit(rowIndex, cellIndex, e.target.innerText)}
