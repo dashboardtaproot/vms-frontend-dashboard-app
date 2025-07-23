@@ -209,7 +209,7 @@
 
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={onClose}>
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center p-4 border-b">
                             <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
                             <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
@@ -254,6 +254,69 @@
 
         // --- Main Application Pages/Views --------------------------------------------------
 
+        // NEW: Forgot Password Modal Component
+        const ForgotPasswordModal = ({ isOpen, onClose }) => {
+            const [email, setEmail] = useState('');
+            const [message, setMessage] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError('');
+                setMessage('');
+                setLoading(true);
+                try {
+                    const data = await api.requestPasswordReset(email);
+                    // The backend always returns a generic success message for security
+                    setMessage(data.message);
+                    setTimeout(() => {
+                        onClose();
+                        setMessage('');
+                        setEmail('');
+                    }, 3000);
+                } catch (err) {
+                    // Even on error, we show a generic message to prevent user enumeration
+                    setMessage("If your account exists, a password reset email has been sent.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <Modal isOpen={isOpen} onClose={onClose} title="Request Password Reset">
+                    {message && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">{message}</div>}
+                    {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
+                    <p className="text-gray-600 mb-4">Enter your username (email address) and we will send you a temporary password.</p>
+                    <form onSubmit={handleSubmit}>
+                        <div className="mb-4">
+                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="reset-email">
+                                Username (Email)
+                            </label>
+                            <input
+                                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                id="reset-email"
+                                type="email"
+                                placeholder="user@example.com"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <div className="flex items-center justify-end">
+                            <button
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex justify-center items-center"
+                                type="submit"
+                                disabled={loading}
+                            >
+                                {loading ? <Spinner size="5" /> : 'Send Reset Email'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            );
+        };
+
         // 1. Login Page
         const LoginPage = () => {
             const [username, setUsername] = useState('');
@@ -261,6 +324,7 @@
             const [error, setError] = useState('');
             const [loading, setLoading] = useState(false);
             const { login } = useAuth();
+            const [isForgotPasswordOpen, setForgotPasswordOpen] = useState(false); // State for the new modal
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -280,65 +344,68 @@
                 }
             };
             
-            // TODO: Implement forgot password modal/flow
-            const handleForgotPassword = () => {
-                alert("Forgot Password functionality to be implemented.");
+            const handleForgotPassword = (e) => {
+                e.preventDefault();
+                setForgotPasswordOpen(true);
             };
 
             return (
-                <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center">
-                    <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg">
-                        <div className="text-center mb-8">
-                            <h1 className="text-3xl font-bold text-gray-800">VMS Dashboard</h1>
-                            <p className="text-gray-500 mt-2">Welcome back! Please log in.</p>
+                <>
+                    <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center">
+                        <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg">
+                            <div className="text-center mb-8">
+                                <h1 className="text-3xl font-bold text-gray-800">VMS Dashboard</h1>
+                                <p className="text-gray-500 mt-2">Welcome back! Please log in.</p>
+                            </div>
+                            {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">{error}</div>}
+                            <form onSubmit={handleSubmit}>
+                                <div className="mb-4">
+                                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="username">
+                                        Username (Email)
+                                    </label>
+                                    <input
+                                        className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        id="username"
+                                        type="email"
+                                        placeholder="user@example.com"
+                                        value={username}
+                                        onChange={(e) => setUsername(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">
+                                        Password
+                                    </label>
+                                    <input
+                                        className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        id="password"
+                                        type="password"
+                                        placeholder="******************"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <button
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full flex justify-center items-center"
+                                        type="submit"
+                                        disabled={loading}
+                                    >
+                                        {loading ? <Spinner size="5" /> : 'Sign In'}
+                                    </button>
+                                </div>
+                                <div className="text-center mt-4">
+                                    <a className="inline-block align-baseline font-bold text-sm text-indigo-600 hover:text-indigo-800" href="#" onClick={handleForgotPassword}>
+                                        Forgot Password?
+                                    </a>
+                                </div>
+                            </form>
                         </div>
-                        {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">{error}</div>}
-                        <form onSubmit={handleSubmit}>
-                            <div className="mb-4">
-                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="username">
-                                    Username (Email)
-                                </label>
-                                <input
-                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    id="username"
-                                    type="email"
-                                    placeholder="user@example.com"
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="mb-6">
-                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">
-                                    Password
-                                </label>
-                                <input
-                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    id="password"
-                                    type="password"
-                                    placeholder="******************"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <button
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full flex justify-center items-center"
-                                    type="submit"
-                                    disabled={loading}
-                                >
-                                    {loading ? <Spinner size="5" /> : 'Sign In'}
-                                </button>
-                            </div>
-                            <div className="text-center mt-4">
-                                <a className="inline-block align-baseline font-bold text-sm text-indigo-600 hover:text-indigo-800" href="#" onClick={handleForgotPassword}>
-                                    Forgot Password?
-                                </a>
-                            </div>
-                        </form>
                     </div>
-                </div>
+                    <ForgotPasswordModal isOpen={isForgotPasswordOpen} onClose={() => setForgotPasswordOpen(false)} />
+                </>
             );
         };
 
@@ -610,31 +677,3 @@
     </script>
 </body>
 </html>
-```
-
-### Step 5: Commit and Push the Code Change
-
-Now for the final step that makes the GitHub workflow so powerful.
-
-1.  **Save the changes** to your local `index.html` file (with the updated `API_BASE_URL = '/api';`).
-2.  **Commit** this change to your local Git repository. A good commit message would be `feat: Update API_BASE_URL for Azure proxy`.
-3.  **Push** the commit to your `main` (or `master`) branch on GitHub.
-
-```bash
-# Example git commands
-git add index.html
-git commit -m "feat: Update API_BASE_URL for Azure proxy"
-git push
-```
-
-### What Happens Next
-
-Pushing this change will **automatically trigger a new deployment**.
-
-* Go back to the **"Actions"** tab in your GitHub repository. You will see a new workflow run has started.
-* Wait for it to complete successfully (it should only take a minute or two).
-* Once it's done, your Static Web App will be running the latest version of the code with the correct API path.
-
-### Step 6: Test the Live Application
-
-Go to your Static Web App's URL. You should now be able to log in and interact with your application, as it can successfully communicate with your backend functio
