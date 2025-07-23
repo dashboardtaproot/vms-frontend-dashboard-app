@@ -65,6 +65,10 @@
         .table-layout th, .table-layout td {
             overflow-wrap: break-word;
         }
+        .column-list-item.dragging {
+            opacity: 0.5;
+            background: #e0e7ff;
+        }
     </style>
 </head>
 <body>
@@ -129,6 +133,7 @@
             updateJobPosting: (updates, authenticatedUsername) => api.call('updateJobPosting', 'POST', { updates, authenticatedUsername }),
             updateJobStatus: (postingIds, newStatus, authenticatedUsername) => api.call('updateJobStatus', 'POST', { postingIds, newStatus, authenticatedUsername }),
             archiveOrDeleteJob: (postingIds, actionType, authenticatedUsername) => api.call('archiveOrDeleteJob', 'POST', { postingIds, actionType, authenticatedUsername }),
+            saveUserDashboardPreferences: (authenticatedUsername, preferences) => api.call('saveUserDashboardPreferences', 'POST', { authenticatedUsername, preferences }),
         };
 
         // --- Authentication Context --------------------------------------------------------
@@ -138,6 +143,10 @@
                 case 'LOGIN': return { ...state, isAuthenticated: true, user: action.payload, isFirstLogin: action.payload.isFirstLogin };
                 case 'LOGOUT': return { ...state, isAuthenticated: false, user: null, isFirstLogin: false };
                 case 'PASSWORD_CHANGED': return { ...state, isFirstLogin: false };
+                case 'PREFERENCES_UPDATED': 
+                    const newUser = { ...state.user, dashboardPreferences: action.payload };
+                    localStorage.setItem('vms_user', JSON.stringify(newUser));
+                    return { ...state, user: newUser };
                 default: return state;
             }
         };
@@ -156,7 +165,10 @@
                 localStorage.setItem('vms_user', JSON.stringify(updatedUser));
                 dispatch({ type: 'PASSWORD_CHANGED' });
             };
-            return <AuthContext.Provider value={{ ...state, login, logout, passwordChanged }}>{children}</AuthContext.Provider>;
+            const updatePreferences = (preferences) => {
+                dispatch({ type: 'PREFERENCES_UPDATED', payload: preferences });
+            };
+            return <AuthContext.Provider value={{ ...state, login, logout, passwordChanged, updatePreferences }}>{children}</AuthContext.Provider>;
         };
         const useAuth = () => useContext(AuthContext);
 
@@ -252,7 +264,7 @@
         };
 
         const DashboardPage = ({ sheetKey }) => {
-            const { user } = useAuth();
+            const { user, updatePreferences } = useAuth();
             const [rawData, setRawData] = useState({ header: [], rows: [] });
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
@@ -261,6 +273,19 @@
             const [statusFilter, setStatusFilter] = useState('');
             const [unsavedChanges, setUnsavedChanges] = useState({});
             const [modalState, setModalState] = useState({ type: null, job: null });
+            const [isColumnModalOpen, setColumnModalOpen] = useState(false);
+
+            const userPrefs = useMemo(() => {
+                try {
+                    const prefs = user?.dashboardPreferences;
+                    return {
+                        order: prefs?.columnOrder ? JSON.parse(prefs.columnOrder) : [],
+                        visibility: prefs?.columnVisibility ? JSON.parse(prefs.columnVisibility) : []
+                    };
+                } catch (e) {
+                    return { order: [], visibility: [] };
+                }
+            }, [user]);
 
             const loadData = useCallback(async () => {
                 setLoading(true);
@@ -281,39 +306,52 @@
             }, [sheetKey, user.userIdentifier]);
 
             useEffect(() => { loadData(); }, [loadData]);
-
-            // --- Memoized logic to transform data for display ---
+            
             const { displayHeader, displayData } = useMemo(() => {
                 const { header, rows } = rawData;
                 if (!header || header.length === 0) return { displayHeader: [], displayData: [] };
 
-                const clientIndex = header.indexOf('Client Name');
-                const postingFromIndex = header.indexOf('Posting From');
+                let newHeader = [...header];
+                let newRows = rows.map(r => [...r]);
+
+                const clientIndex = newHeader.indexOf('Client Name');
+                const postingFromIndex = newHeader.indexOf('Posting From');
                 
-                if (clientIndex === -1 || postingFromIndex === -1) return { displayHeader: header, displayData: rows };
+                if (clientIndex !== -1 && postingFromIndex !== -1) {
+                    newHeader[clientIndex] = 'Client Info';
+                    newHeader.splice(postingFromIndex, 1);
+                    newRows = newRows.map(row => {
+                        const client = row[clientIndex] || '';
+                        const location = row[postingFromIndex] || '';
+                        let clientInfo = (client && location && location !== 'All') ? `${client} / ${location}` : (client || location);
+                        const newRow = [...row];
+                        newRow[clientIndex] = clientInfo;
+                        newRow.splice(postingFromIndex, 1);
+                        return newRow;
+                    });
+                }
+                
+                newHeader = newHeader.filter(h => h !== 'Company Name');
 
-                const newHeader = [...header];
-                newHeader[clientIndex] = 'Client Info'; // Rename Client Name
-                newHeader.splice(postingFromIndex, 1); // Remove Posting From
+                if (userPrefs.order.length > 0) {
+                    const orderedHeader = userPrefs.order.filter(h => newHeader.includes(h));
+                    const remainingHeader = newHeader.filter(h => !userPrefs.order.includes(h));
+                    const finalHeaderOrder = [...orderedHeader, ...remainingHeader];
+                    
+                    const reorderIndices = finalHeaderOrder.map(h => newHeader.indexOf(h));
+                    newRows = newRows.map(row => reorderIndices.map(i => row[i]));
+                    newHeader = finalHeaderOrder;
+                }
+                
+                if (userPrefs.visibility.length > 0) {
+                    const visibleHeader = newHeader.filter(h => !userPrefs.visibility.includes(h));
+                    const visibleIndices = visibleHeader.map(h => newHeader.indexOf(h));
+                    newRows = newRows.map(row => visibleIndices.map(i => row[i]));
+                    newHeader = visibleHeader;
+                }
 
-                const newRows = rows.map(row => {
-                    const client = row[clientIndex] || '';
-                    const location = row[postingFromIndex] || '';
-                    let clientInfo = '';
-                    if (client && location && location !== 'All') {
-                        clientInfo = `${client} / ${location}`;
-                    } else {
-                        clientInfo = client || location;
-                    }
-
-                    const newRow = [...row];
-                    newRow[clientIndex] = clientInfo;
-                    newRow.splice(postingFromIndex, 1);
-                    return newRow;
-                });
                 return { displayHeader: newHeader, displayData: newRows };
-
-            }, [rawData, sheetKey]);
+            }, [rawData, sheetKey, userPrefs]);
 
             const handleSort = (key) => {
                 let direction = 'ascending';
@@ -432,8 +470,31 @@
                 return obj;
             };
 
+            const handleSaveColumnSettings = async (newPrefs) => {
+                setLoading(true);
+                try {
+                    await api.saveUserDashboardPreferences(user.userIdentifier, {
+                        columnOrder: newPrefs.order,
+                        columnVisibility: newPrefs.visibility
+                    });
+                    updatePreferences({
+                        columnOrder: JSON.stringify(newPrefs.order),
+                        columnVisibility: JSON.stringify(newPrefs.visibility)
+                    });
+                } catch(err) {
+                    setError(`Failed to save column settings: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                    setColumnModalOpen(false);
+                }
+            };
+            
             return (
                 <div className="space-y-4">
+                    <div className="bg-white p-4 rounded-lg shadow-sm border">
+                        <h2 className="text-xl font-bold text-gray-800">{DASHBOARD_CONFIGS[sheetKey]?.companyName || 'Dashboard'}</h2>
+                    </div>
+                    
                     <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center justify-between">
                         <div className="flex items-center space-x-2">
                             <input type="text" placeholder="Search to collect text..." value={generalFilter} onChange={e => setGeneralFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md w-64"/>
@@ -447,6 +508,7 @@
                                 <option value="Closed">Closed</option>
                             </select>
                             <Dropdown trigger={<button className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Options</button>}>
+                                <a href="#" onClick={(e) => {e.preventDefault(); setColumnModalOpen(true)}} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Column Settings</a>
                                 <a href="#" onClick={downloadCsv} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download CSV</a>
                                 <a href="#" onClick={downloadPdf} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download PDF</a>
                             </Dropdown>
@@ -514,10 +576,95 @@
                         onClose={() => setModalState({type: null, job: null})}
                         job={modalState.job}
                     />
+                    <ColumnSettingsModal 
+                        isOpen={isColumnModalOpen}
+                        onClose={() => setColumnModalOpen(false)}
+                        allHeaders={rawData.header.filter(h => h !== 'Company Name' && h !== 'Posting From')}
+                        userPrefs={userPrefs}
+                        onSave={handleSaveColumnSettings}
+                    />
                 </div>
             );
         };
         
+        const ColumnSettingsModal = ({ isOpen, onClose, allHeaders, userPrefs, onSave }) => {
+            const [order, setOrder] = useState([]);
+            const [visibility, setVisibility] = useState({});
+            const dragItem = useRef();
+            const dragOverItem = useRef();
+
+            useEffect(() => {
+                const initialOrder = userPrefs.order.length > 0 
+                    ? userPrefs.order.filter(h => allHeaders.includes(h))
+                    : allHeaders;
+                const remainingHeaders = allHeaders.filter(h => !initialOrder.includes(h));
+                setOrder([...initialOrder, ...remainingHeaders]);
+
+                const initialVisibility = {};
+                allHeaders.forEach(h => {
+                    initialVisibility[h] = !userPrefs.visibility.includes(h);
+                });
+                setVisibility(initialVisibility);
+            }, [isOpen, allHeaders, userPrefs]);
+
+            const handleDragStart = (e, position) => {
+                dragItem.current = position;
+                e.target.classList.add('dragging');
+            };
+
+            const handleDragEnter = (e, position) => {
+                dragOverItem.current = position;
+            };
+            
+            const handleDrop = (e) => {
+                const newOrder = [...order];
+                const dragItemContent = newOrder[dragItem.current];
+                newOrder.splice(dragItem.current, 1);
+                newOrder.splice(dragOverItem.current, 0, dragItemContent);
+                dragItem.current = null;
+                dragOverItem.current = null;
+                setOrder(newOrder);
+                e.target.closest('.column-list-item').classList.remove('dragging');
+            };
+
+            const handleVisibilityChange = (header) => {
+                setVisibility(prev => ({...prev, [header]: !prev[header]}));
+            };
+
+            const handleSave = () => {
+                const hiddenColumns = Object.entries(visibility)
+                    .filter(([_, isVisible]) => !isVisible)
+                    .map(([header]) => header);
+                onSave({ order, visibility: hiddenColumns });
+            };
+
+            return (
+                <Modal isOpen={isOpen} onClose={onClose} title="Column Settings" size="lg">
+                    <p className="text-gray-600 mb-4">Drag and drop to reorder. Check/uncheck to show/hide.</p>
+                    <div className="space-y-2">
+                        {order.map((header, index) => (
+                            <div key={header} 
+                                className="flex items-center justify-between p-2 bg-gray-50 rounded-md border cursor-grab column-list-item"
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, index)}
+                                onDragEnter={(e) => handleDragEnter(e, index)}
+                                onDragEnd={(e) => e.target.classList.remove('dragging')}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={handleDrop}
+                            >
+                                <span>{header}</span>
+                                <input type="checkbox" checked={visibility[header] || false} onChange={() => handleVisibilityChange(header)} className="h-5 w-5 rounded"/>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex justify-end mt-6 space-x-2">
+                        <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
+                        <button onClick={handleSave} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Save Settings</button>
+                    </div>
+                </Modal>
+            );
+        };
+
         const ActionMenu = ({ job, onAction }) => (
             <Dropdown trigger={
                 <button className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100">
