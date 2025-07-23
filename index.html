@@ -287,41 +287,30 @@
                 const { header, rows } = rawData;
                 if (!header || header.length === 0) return { displayHeader: [], displayData: [] };
 
-                const isCombinedView = sheetKey === 'ecaltVMSDisplay' || sheetKey === 'taprootVMSDisplay';
-
-                if (isCombinedView) {
-                    const clientIndex = header.indexOf('Client Name');
-                    const postingFromIndex = header.indexOf('Posting From');
-                    
-                    if (clientIndex === -1 || postingFromIndex === -1) return { displayHeader: header, displayData: rows };
-
-                    const newHeader = [...header];
-                    newHeader[clientIndex] = 'Client Info'; // Rename Client Name
-                    newHeader.splice(postingFromIndex, 1); // Remove Posting From
-
-                    const newRows = rows.map(row => {
-                        const client = row[clientIndex] || '';
-                        const location = row[postingFromIndex] || '';
-                        let clientInfo = '';
-                        if (client && location && location !== 'All') {
-                            clientInfo = `${client} / ${location}`;
-                        } else {
-                            clientInfo = client || location;
-                        }
-
-                        const newRow = [...row];
-                        newRow[clientIndex] = clientInfo;
-                        newRow.splice(postingFromIndex, 1);
-                        return newRow;
-                    });
-                    return { displayHeader: newHeader, displayData: newRows };
-                }
+                const clientIndex = header.indexOf('Client Name');
+                const postingFromIndex = header.indexOf('Posting From');
                 
-                // For specific views, remove Company Name and Posting From
-                const newHeader = header.filter(h => h !== 'Company Name' && h !== 'Posting From');
-                const indicesToKeep = newHeader.map(h => header.indexOf(h));
-                const newRows = rows.map(row => indicesToKeep.map(i => row[i]));
+                if (clientIndex === -1 || postingFromIndex === -1) return { displayHeader: header, displayData: rows };
 
+                const newHeader = [...header];
+                newHeader[clientIndex] = 'Client Info'; // Rename Client Name
+                newHeader.splice(postingFromIndex, 1); // Remove Posting From
+
+                const newRows = rows.map(row => {
+                    const client = row[clientIndex] || '';
+                    const location = row[postingFromIndex] || '';
+                    let clientInfo = '';
+                    if (client && location && location !== 'All') {
+                        clientInfo = `${client} / ${location}`;
+                    } else {
+                        clientInfo = client || location;
+                    }
+
+                    const newRow = [...row];
+                    newRow[clientIndex] = clientInfo;
+                    newRow.splice(postingFromIndex, 1);
+                    return newRow;
+                });
                 return { displayHeader: newHeader, displayData: newRows };
 
             }, [rawData, sheetKey]);
