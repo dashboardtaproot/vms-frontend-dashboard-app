@@ -59,23 +59,41 @@
             cursor: pointer;
             user-select: none;
         }
-        /* --- MODIFIED FOR NO HORIZONTAL SCROLL --- */
         .table-layout {
-            table-layout: fixed; /* Crucial for controlling column widths */
+            table-layout: fixed;
             width: 100%;
         }
         .table-layout th, .table-layout td {
-            border-right: 1px solid #e5e7eb; /* Add right border */
-            white-space: normal; /* Allow text wrapping by default */
-            word-break: break-word; /* Break long words to prevent overflow */
-            vertical-align: top; /* Align content to the top */
+            border-right: 1px solid #e5e7eb;
+            white-space: normal;
+            word-break: break-word;
+            vertical-align: top;
         }
         .table-layout th:last-child, .table-layout td:last-child {
-            border-right: none; /* Remove right border from last cell */
+            border-right: none;
         }
         .column-list-item.dragging {
             opacity: 0.5;
             background: #e0e7ff;
+        }
+        /* Styles for the new header menu */
+        .header-menu-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            cursor: pointer;
+        }
+        .header-menu-trigger:hover .filter-icon {
+            opacity: 1;
+        }
+        .filter-icon {
+            opacity: 0.4;
+            transition: opacity 150ms ease-in-out;
+        }
+        .filter-icon.active {
+            opacity: 1;
+            color: #4f46e5; /* indigo-600 */
         }
     </style>
 </head>
@@ -84,7 +102,7 @@
 
     <script type="text/babel">
         // ===================================================================================
-        // VMS Dashboard - React Application (Merged)
+        // VMS Dashboard - React Application
         // ===================================================================================
 
         const { useState, useEffect, createContext, useContext, useReducer, useMemo, useCallback, useRef } = React;
@@ -101,6 +119,7 @@
         };
         const EDITABLE_COLUMNS = ['Working By', '# Submitted', 'Remarks', '1st Candidate Name', '2nd Candidate Name', '3rd Candidate Name'];
         const DATE_COLUMNS = ['Posting Date', 'Deadline'];
+        const NUMBER_COLUMNS = ['# Submitted', 'Max Submissions'];
 
         const formatDate = (isoString) => {
             if (!isoString || isoString === 'Need To Update') return isoString;
@@ -113,7 +132,21 @@
             }
         };
 
-        // --- API Helper (Merged) -----------------------------------------------------------
+        const getDeadlineClass = (dateString) => {
+            if (!dateString || dateString === 'Need To Update') return '';
+            const deadline = new Date(dateString);
+            const today = new Date();
+            const sevenDaysFromNow = new Date();
+            sevenDaysFromNow.setDate(today.getDate() + 7);
+            deadline.setHours(0, 0, 0, 0);
+            today.setHours(0, 0, 0, 0);
+            sevenDaysFromNow.setHours(0,0,0,0);
+            if (deadline < today) return 'text-red-600 font-bold';
+            if (deadline <= sevenDaysFromNow) return 'text-orange-500 font-semibold';
+            return 'text-green-600';
+        };
+
+        // --- API Helper -----------------------------------------------------------
         const api = {
             call: async (endpoint, method = 'GET', body = null, params = {}) => {
                 const url = new URL(`${API_BASE_URL}/${endpoint}`, window.location.origin);
@@ -132,25 +165,21 @@
                     throw error;
                 }
             },
-            // Auth
             authenticateUser: (username, password) => api.call('authenticateUser', 'POST', { username, password }),
             changePassword: (targetUsername, newPassword, authenticatedUsername) => api.call('changePassword', 'POST', { targetUsername, newPassword, authenticatedUsername }),
             requestPasswordReset: (username) => api.call('requestPasswordReset', 'POST', { username }),
-            // Users (Admin)
             getUsers: (authenticatedUsername) => api.call('getUsers', 'GET', null, { authenticatedUsername }),
             addUser: (userData, authenticatedUsername) => api.call('addUser', 'POST', { ...userData, authenticatedUsername }),
             updateUser: (originalUsername, userData, authenticatedUsername) => api.call('updateUser', 'POST', { originalUsername, userData, authenticatedUsername }),
             deleteUser: (usernameToDelete, authenticatedUsername) => api.call('deleteUser', 'POST', { usernameToDelete, authenticatedUsername }),
-            // Dashboard & Jobs
             getDashboardData: (sheetKey, authenticatedUsername) => api.call('getDashboardData', 'GET', null, { sheetKey, authenticatedUsername }),
             updateJobPosting: (updates, authenticatedUsername) => api.call('updateJobPosting', 'POST', { updates, authenticatedUsername }),
             updateJobStatus: (postingIds, newStatus, authenticatedUsername) => api.call('updateJobStatus', 'POST', { postingIds, newStatus, authenticatedUsername }),
             archiveOrDeleteJob: (postingIds, actionType, authenticatedUsername) => api.call('archiveOrDeleteJob', 'POST', { postingIds, actionType, authenticatedUsername }),
-            // Preferences
             saveUserDashboardPreferences: (authenticatedUsername, preferences) => api.call('saveUserDashboardPreferences', 'POST', { authenticatedUsername, preferences }),
         };
 
-        // --- Authentication Context (Merged) -----------------------------------------------
+        // --- Authentication Context -----------------------------------------------
         const AuthContext = createContext();
         const authReducer = (state, action) => {
             switch (action.type) {
@@ -206,7 +235,7 @@
         };
         const Spinner = ({ size = '8' }) => <div className={`animate-spin rounded-full h-${size} w-${size} border-b-2 border-indigo-600`}></div>;
 
-        const Dropdown = ({ trigger, children }) => {
+        const Dropdown = ({ trigger, children, width = '48' }) => {
             const [isOpen, setIsOpen] = useState(false);
             const node = useRef();
             useEffect(() => {
@@ -220,7 +249,11 @@
                 <div className="relative" ref={node}>
                     <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
                     {isOpen && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-20 py-1" onClick={() => setIsOpen(false)}>
+                        <div className={`absolute right-0 mt-2 w-${width} bg-white rounded-md shadow-lg z-20 py-1`} onClick={(e) => {
+                            if (!e.target.closest('button.close-on-click')) {
+                                e.stopPropagation();
+                            }
+                        }}>
                             {children}
                         </div>
                     )}
@@ -228,7 +261,7 @@
             );
         };
         
-        // --- Authentication & User Pages ---------------------------------------------------
+        // --- Authentication & User Pages (omitted for brevity, no changes) ---
         const ForgotPasswordModal = ({ isOpen, onClose }) => {
             const [email, setEmail] = useState('');
             const [message, setMessage] = useState('');
@@ -372,96 +405,6 @@
             );
         };
 
-        // --- Admin Page and Modals ---------------------------------------------------------
-        const UserFormModal = ({ isOpen, onClose, onSave, userToEdit }) => {
-            const [formData, setFormData] = useState({});
-            const [loading, setLoading] = useState(false);
-            const [error, setError] = useState('');
-
-            useEffect(() => {
-                if (userToEdit) {
-                    setFormData({ ...userToEdit, password: '' });
-                } else {
-                    setFormData({ username: '', password: '', displayName: '', userRole: '', backendOfficeRole: '' });
-                }
-            }, [userToEdit, isOpen]);
-
-            const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                setError(''); setLoading(true);
-                try {
-                    await onSave(formData);
-                    onClose();
-                } catch (err) {
-                    setError(err.message);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            return (
-                <Modal isOpen={isOpen} onClose={onClose} title={userToEdit ? 'Edit User' : 'Add New User'} size="md">
-                    {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div>
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Username (Email)</label>
-                            <input type="email" name="username" value={formData.username || ''} onChange={handleChange} disabled={!!userToEdit} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 disabled:bg-gray-200" required />
-                        </div>
-                        <div>
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Password</label>
-                            <input type="password" name="password" value={formData.password || ''} onChange={handleChange} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" placeholder={userToEdit ? 'Leave blank to keep current' : ''} required={!userToEdit} />
-                        </div>
-                        <div>
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Display Name</label>
-                            <input type="text" name="displayName" value={formData.displayName || ''} onChange={handleChange} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required />
-                        </div>
-                        <div>
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Role</label>
-                            <select name="userRole" value={formData.userRole || ''} onChange={handleChange} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required>
-                                <option value="">Select a role</option>
-                                <option value="Admin">Admin</option>
-                                <option value="Data Entry">Data Entry</option>
-                                <option value="Viewer">Viewer</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-gray-700 text-sm font-bold mb-2">Backend Role</label>
-                            <input type="text" name="backendOfficeRole" value={formData.backendOfficeRole || ''} onChange={handleChange} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required />
-                        </div>
-                        <div className="flex justify-end pt-4 space-x-2">
-                            <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
-                            <button type="submit" disabled={loading} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 flex items-center">
-                                {loading ? <Spinner size="5" /> : 'Save'}
-                            </button>
-                        </div>
-                    </form>
-                </Modal>
-            );
-        };
-
-        const DeleteUserModal = ({ isOpen, onClose, onConfirm, userToDelete }) => {
-            const [loading, setLoading] = useState(false);
-            const handleConfirm = async () => {
-                setLoading(true);
-                await onConfirm();
-                setLoading(false);
-                onClose();
-            };
-            return (
-                <Modal isOpen={isOpen} onClose={onClose} title="Confirm Deletion" size="sm">
-                    <p>Are you sure you want to delete the user <strong>{userToDelete?.username}</strong>? This action cannot be undone.</p>
-                    <div className="flex justify-end mt-6 space-x-2">
-                        <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
-                        <button onClick={handleConfirm} disabled={loading} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center">
-                            {loading ? <Spinner size="5" /> : 'Delete'}
-                        </button>
-                    </div>
-                </Modal>
-            );
-        };
-
         const AdminPage = () => {
             const { user } = useAuth();
             const [users, setUsers] = useState([]);
@@ -551,8 +494,6 @@
                 </>
             );
         };
-        
-        // --- Dashboard Page and Components -------------------------------------------------
         const ReportsPage = () => {
              return (
                 <div>
@@ -565,7 +506,83 @@
                 </div>
             );
         };
+        
+        // --- NEW: Header Menu Component for Sorting and Filtering ---
+        const HeaderMenu = ({ header, sortConfig, onSort, filterConfig, onFilterChange }) => {
+            const [filterType, setFilterType] = useState(filterConfig?.type || 'contains');
+            const [value1, setValue1] = useState(filterConfig?.value1 || '');
+            const [value2, setValue2] = useState(filterConfig?.value2 || '');
 
+            const isDate = DATE_COLUMNS.includes(header);
+            const isNumber = NUMBER_COLUMNS.includes(header);
+            
+            const handleApply = () => {
+                onFilterChange(header, { type: filterType, value1, value2 });
+            };
+
+            const handleClear = () => {
+                setValue1('');
+                setValue2('');
+                onFilterChange(header, null);
+            };
+
+            const getFilterOptions = () => {
+                const commonOptions = [
+                    { value: 'contains', label: 'Contains' },
+                    { value: 'equals', label: 'Equals' },
+                    { value: 'not_contains', label: 'Does not contain' },
+                ];
+                const numericDateOptions = [
+                    { value: 'above', label: 'Above' },
+                    { value: 'below', label: 'Below' },
+                    { value: 'between', label: 'Between' },
+                ];
+                if (isDate || isNumber) {
+                    return [...commonOptions, ...numericDateOptions];
+                }
+                return commonOptions;
+            };
+
+            return (
+                <div className="p-2 space-y-2">
+                    {/* Sorting Section */}
+                    <div>
+                        <button onClick={() => onSort('ascending')} className="w-full text-left px-2 py-1 text-sm rounded hover:bg-slate-100">Sort Ascending</button>
+                        <button onClick={() => onSort('descending')} className="w-full text-left px-2 py-1 text-sm rounded hover:bg-slate-100">Sort Descending</button>
+                    </div>
+                    <hr/>
+                    {/* Filtering Section */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-semibold text-gray-500 px-2">FILTER</label>
+                        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="w-full p-1 border rounded text-sm">
+                            {getFilterOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                        <input 
+                            type={isDate ? 'date' : isNumber ? 'number' : 'text'}
+                            value={value1}
+                            onChange={e => setValue1(e.target.value)}
+                            className="w-full p-1 border rounded text-sm"
+                            placeholder={filterType === 'between' ? 'From...' : 'Value...'}
+                        />
+                        {filterType === 'between' && (
+                            <input 
+                                type={isDate ? 'date' : isNumber ? 'number' : 'text'}
+                                value={value2}
+                                onChange={e => setValue2(e.target.value)}
+                                className="w-full p-1 border rounded text-sm"
+                                placeholder="To..."
+                            />
+                        )}
+                        <div className="flex justify-end space-x-2 pt-1">
+                            <button onClick={handleClear} className="px-2 py-1 text-xs bg-slate-200 rounded hover:bg-slate-300 close-on-click">Clear</button>
+                            <button onClick={handleApply} className="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 close-on-click">Apply</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Dashboard Page and Components -------------------------------------------------
         const DashboardPage = ({ sheetKey }) => {
             const { user, updatePreferences } = useAuth();
             const [rawData, setRawData] = useState({ header: [], rows: [] });
@@ -577,6 +594,7 @@
             const [unsavedChanges, setUnsavedChanges] = useState({});
             const [modalState, setModalState] = useState({ type: null, job: null });
             const [isColumnModalOpen, setColumnModalOpen] = useState(false);
+            const [columnFilters, setColumnFilters] = useState({});
 
             const userPrefs = useMemo(() => {
                 try {
@@ -608,68 +626,72 @@
 
             useEffect(() => { loadData(); }, [loadData]);
             
-            const { displayHeader, displayData } = useMemo(() => {
+            const transformedData = useMemo(() => {
                 const { header, rows } = rawData;
-                if (!header || header.length === 0) return { displayHeader: [], displayData: [] };
-
-                let newHeader = [...header];
-                let newRows = rows.map(r => [...r]);
-
-                const lastSubIndex = newHeader.indexOf('Last Submission Date');
-                if(lastSubIndex !== -1) newHeader[lastSubIndex] = 'Deadline';
-                const resumesIndex = newHeader.indexOf('No. of Resumes Submitted');
-                if(resumesIndex !== -1) newHeader[resumesIndex] = '# Submitted';
-
-                const clientIndex = newHeader.indexOf('Client Name');
-                const postingFromIndex = newHeader.indexOf('Posting From');
-                
-                if (clientIndex !== -1 && postingFromIndex !== -1) {
-                    newHeader[clientIndex] = 'Client Info';
-                    newHeader.splice(postingFromIndex, 1);
-                    newRows = newRows.map(row => {
-                        const client = row[clientIndex] || '';
-                        const location = row[postingFromIndex] || '';
-                        let clientInfo = (client && location && location !== 'All') ? `${client} / ${location}` : (client || location);
-                        const newRow = [...row];
-                        newRow[clientIndex] = clientInfo;
-                        newRow.splice(postingFromIndex, 1);
-                        return newRow;
+                if (!header || header.length === 0) return { header: [], rows: [] };
+                const headerRenames = { 'Last Submission Date': 'Deadline', 'No. of Resumes Submitted': '# Submitted' };
+                const originalHeaderMap = header.reduce((acc, h, i) => ({ ...acc, [h]: i }), {});
+                let transformedHeader = header.map(h => headerRenames[h] || h);
+                const clientIndex = originalHeaderMap['Client Name'];
+                const postingFromIndex = originalHeaderMap['Posting From'];
+                const clientInfoIndex = transformedHeader.indexOf('Client Name');
+                if (clientIndex !== undefined && postingFromIndex !== undefined && clientInfoIndex !== -1) {
+                    transformedHeader[clientInfoIndex] = 'Client Info';
+                    transformedHeader = transformedHeader.filter(h => h !== 'Posting From');
+                }
+                transformedHeader = transformedHeader.filter(h => h !== 'Company Name');
+                const transformedRows = rows.map(row => {
+                    const newRow = [];
+                    transformedHeader.forEach(newHeaderName => {
+                        if (newHeaderName === 'Client Info') {
+                            const client = row[clientIndex] || '';
+                            const location = row[postingFromIndex] || '';
+                            newRow.push((client && location && location !== 'All') ? `${client} / ${location}` : (client || location));
+                        } else {
+                            const originalHeaderName = Object.keys(headerRenames).find(key => headerRenames[key] === newHeaderName) || newHeaderName;
+                            const originalIndex = originalHeaderMap[originalHeaderName];
+                            newRow.push(row[originalIndex]);
+                        }
                     });
-                }
-                
-                newHeader = newHeader.filter(h => h !== 'Company Name');
+                    return newRow;
+                });
+                return { header: transformedHeader, rows: transformedRows };
+            }, [rawData]);
 
+            const { displayHeader, displayData } = useMemo(() => {
+                let { header, rows } = transformedData;
                 const defaultOrder = ['Posting ID', 'Posting Title', 'Posting Date', 'Max Submissions', 'Max C2C Rate', 'Required Skill Set', 'Any Required Certificates', 'Work Position Type', 'Working By', 'Remarks', '1st Candidate Name', '2nd Candidate Name', '3rd Candidate Name', 'Status', 'Deadline', 'Client Info', '# Submitted'];
-
                 if (userPrefs.order.length > 0) {
-                    const orderedHeader = userPrefs.order.filter(h => newHeader.includes(h));
-                    const remainingHeader = newHeader.filter(h => !userPrefs.order.includes(h));
+                    const orderedHeader = userPrefs.order.filter(h => header.includes(h));
+                    const remainingHeader = header.filter(h => !userPrefs.order.includes(h));
                     const finalHeaderOrder = [...orderedHeader, ...remainingHeader];
-                    const reorderIndices = finalHeaderOrder.map(h => newHeader.indexOf(h));
-                    newRows = newRows.map(row => reorderIndices.map(i => row[i]));
-                    newHeader = finalHeaderOrder;
+                    const reorderIndices = finalHeaderOrder.map(h => header.indexOf(h));
+                    rows = rows.map(row => reorderIndices.map(i => row[i]));
+                    header = finalHeaderOrder;
                 } else {
-                    const defaultOrderedHeader = defaultOrder.filter(h => newHeader.includes(h));
-                    const remainingFromBackend = newHeader.filter(h => !defaultOrder.includes(h));
+                    const defaultOrderedHeader = defaultOrder.filter(h => header.includes(h));
+                    const remainingFromBackend = header.filter(h => !defaultOrder.includes(h));
                     const finalHeaderOrder = [...defaultOrderedHeader, ...remainingFromBackend];
-                    const reorderIndices = finalHeaderOrder.map(h => newHeader.indexOf(h));
-                    newRows = newRows.map(row => reorderIndices.map(i => row[i]));
-                    newHeader = finalHeaderOrder;
+                    const reorderIndices = finalHeaderOrder.map(h => header.indexOf(h));
+                    rows = rows.map(row => reorderIndices.map(i => row[i]));
+                    header = finalHeaderOrder;
                 }
-                
                 if (userPrefs.visibility.length > 0) {
-                    const visibleHeader = newHeader.filter(h => !userPrefs.visibility.includes(h));
-                    const visibleIndices = visibleHeader.map(h => newHeader.indexOf(h));
-                    newRows = newRows.map(row => visibleIndices.map(i => row[i]));
-                    newHeader = visibleHeader;
+                    const visibleIndices = [];
+                    const visibleHeader = header.filter((h, i) => {
+                        if (!userPrefs.visibility.includes(h)) {
+                            visibleIndices.push(i);
+                            return true;
+                        }
+                        return false;
+                    });
+                    rows = rows.map(row => visibleIndices.map(i => row[i]));
+                    header = visibleHeader;
                 }
+                return { displayHeader: header, displayData: rows };
+            }, [transformedData, userPrefs]);
 
-                return { displayHeader: newHeader, displayData: newRows };
-            }, [rawData, sheetKey, userPrefs]);
-
-            const handleSort = (key) => {
-                let direction = 'ascending';
-                if (sortConfig.key === key && sortConfig.direction === 'ascending') direction = 'descending';
+            const handleSort = (key, direction) => {
                 setSortConfig({ key, direction });
             };
             
@@ -680,22 +702,27 @@
             };
 
             const handleSaveChanges = async () => {
+                const headerToBackendKeyMap = {
+                    'Working By': 'workingBy', '# Submitted': 'noOfResumesSubmitted', 'Remarks': 'remarks',
+                    '1st Candidate Name': 'candidateName1', '2nd Candidate Name': 'candidateName2', '3rd Candidate Name': 'candidateName3'
+                };
                 const updates = Object.entries(unsavedChanges).map(([postingId, changes]) => {
                     const backendChanges = {};
                     Object.entries(changes).forEach(([headerName, value]) => {
-                        let backendKey = headerName.replace(/[^a-zA-Z0-9]/g, '');
-                        backendKey = backendKey.charAt(0).toLowerCase() + backendKey.slice(1);
-                        backendChanges[backendKey] = value;
+                        const backendKey = headerToBackendKeyMap[headerName];
+                        if (backendKey) { 
+                            if (backendKey === 'noOfResumesSubmitted') backendChanges[backendKey] = parseInt(value, 10) || 0;
+                            else backendChanges[backendKey] = value;
+                        }
                     });
                     return { rowKey: postingId, changes: backendChanges };
                 });
-                
                 if (updates.length === 0) return;
                 setLoading(true);
                 try {
                     await api.updateJobPosting(updates, user.userIdentifier);
                     setUnsavedChanges({});
-                    loadData(); // Refresh data after saving
+                    loadData(); 
                 } catch (err) {
                     setError(`Failed to save: ${err.message}`);
                 } finally {
@@ -707,11 +734,8 @@
                 setLoading(true);
                 const postingId = job['Posting ID'];
                 try {
-                    if (actionType === 'close') {
-                        await api.updateJobStatus([postingId], 'Closed', user.userIdentifier);
-                    } else {
-                        await api.archiveOrDeleteJob([postingId], actionType, user.userIdentifier);
-                    }
+                    if (actionType === 'close') await api.updateJobStatus([postingId], 'Closed', user.userIdentifier);
+                    else await api.archiveOrDeleteJob([postingId], actionType, user.userIdentifier);
                     loadData();
                 } catch (err) {
                     setError(`Action '${actionType}' failed: ${err.message}`);
@@ -721,6 +745,15 @@
                 }
             };
             
+            const handleColumnFilterChange = (header, config) => {
+                setColumnFilters(prev => {
+                    const newFilters = { ...prev };
+                    if (config) newFilters[header] = config;
+                    else delete newFilters[header];
+                    return newFilters;
+                });
+            };
+
             const filteredAndSortedData = useMemo(() => {
                 let processData = [...displayData];
                 
@@ -733,16 +766,72 @@
                     processData = processData.filter(row => row.some(cell => String(cell).toLowerCase().includes(generalFilter.toLowerCase())));
                 }
 
+                Object.entries(columnFilters).forEach(([header, config]) => {
+                    if (!config || !config.value1) return;
+                    const headerIndex = displayHeader.indexOf(header);
+                    if (headerIndex === -1) return;
+
+                    const isDate = DATE_COLUMNS.includes(header);
+                    const isNumber = NUMBER_COLUMNS.includes(header);
+
+                    processData = processData.filter(row => {
+                        const cellValueRaw = row[headerIndex];
+                        if (cellValueRaw === null || cellValueRaw === undefined) return false;
+
+                        if (isDate) {
+                            const cellDate = new Date(cellValueRaw);
+                            if (isNaN(cellDate.getTime())) return false;
+                            const filterDate1 = new Date(config.value1);
+                            
+                            switch (config.type) {
+                                case 'equals': return cellDate.getTime() === filterDate1.getTime();
+                                case 'above': return cellDate > filterDate1;
+                                case 'below': return cellDate < filterDate1;
+                                case 'between':
+                                    const filterDate2 = new Date(config.value2);
+                                    return cellDate >= filterDate1 && cellDate <= filterDate2;
+                                default: return true;
+                            }
+                        } else if (isNumber) {
+                            const cellNum = parseFloat(cellValueRaw);
+                            const filterNum1 = parseFloat(config.value1);
+                            if (isNaN(cellNum) || isNaN(filterNum1)) return false;
+
+                            switch (config.type) {
+                                case 'equals': return cellNum === filterNum1;
+                                case 'above': return cellNum > filterNum1;
+                                case 'below': return cellNum < filterNum1;
+                                case 'between':
+                                    const filterNum2 = parseFloat(config.value2);
+                                    return cellNum >= filterNum1 && cellNum <= filterNum2;
+                                default: return true; // contains, not_contains for numbers
+                            }
+                        }
+                        
+                        // Default string comparison
+                        const cellValue = String(cellValueRaw).toLowerCase();
+                        const filterValue1 = String(config.value1).toLowerCase();
+                        switch (config.type) {
+                            case 'contains': return cellValue.includes(filterValue1);
+                            case 'equals': return cellValue === filterValue1;
+                            case 'not_contains': return !cellValue.includes(filterValue1);
+                            default: return true;
+                        }
+                    });
+                });
+
                 if (sortConfig.key !== null) {
                     const sortIndex = displayHeader.indexOf(sortConfig.key);
                     processData.sort((a, b) => {
-                        if (a[sortIndex] < b[sortIndex]) return sortConfig.direction === 'ascending' ? -1 : 1;
-                        if (a[sortIndex] > b[sortIndex]) return sortConfig.direction === 'ascending' ? 1 : -1;
+                        const valA = a[sortIndex];
+                        const valB = b[sortIndex];
+                        if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1;
+                        if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1;
                         return 0;
                     });
                 }
                 return processData;
-            }, [displayData, sortConfig, generalFilter, statusFilter, displayHeader]);
+            }, [displayData, sortConfig, generalFilter, statusFilter, displayHeader, columnFilters]);
 
             const downloadCsv = () => {
                 const csvRows = [displayHeader.join(','), ...filteredAndSortedData.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))];
@@ -787,17 +876,17 @@
                     
                     <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center space-x-2">
-                            <input type="text" placeholder="Search table..." value={generalFilter} onChange={e => setGeneralFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md w-64"/>
+                            <input type="text" placeholder="Global Search..." value={generalFilter} onChange={e => setGeneralFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md w-64"/>
                         </div>
                         <div className="flex items-center space-x-2">
-                            <button onClick={loadData} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Refresh</button>
-                            <button onClick={handleSaveChanges} disabled={Object.keys(unsavedChanges).length === 0} className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-400">Save Changes</button>
+                            <button onClick={loadData} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">Refresh</button>
+                            <button onClick={handleSaveChanges} disabled={Object.keys(unsavedChanges).length === 0} className="px-4 py-2 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 disabled:bg-gray-400">Save Changes</button>
                             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md">
                                 <option value="">All Statuses</option>
                                 <option value="Open">Open</option>
                                 <option value="Closed">Closed</option>
                             </select>
-                            <Dropdown trigger={<button className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Options</button>}>
+                            <Dropdown trigger={<button className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">Options</button>}>
                                 <a href="#" onClick={(e) => {e.preventDefault(); setColumnModalOpen(true)}} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Column Settings</a>
                                 <a href="#" onClick={downloadCsv} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download CSV</a>
                                 <a href="#" onClick={downloadPdf} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download PDF</a>
@@ -808,28 +897,37 @@
                     {loading && <div className="flex justify-center items-center h-64"><Spinner /></div>}
                     {error && <div className="text-red-500 bg-red-100 p-4 rounded-lg">Error: {error}</div>}
                     {!loading && !error && (
-                        // --- MODIFIED CONTAINER: removed overflow-x-auto, added overflow-hidden ---
                         <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
                             <table className="w-full text-sm text-left text-gray-500 table-layout">
-                                <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                                <thead className="text-xs text-gray-700 uppercase bg-slate-100">
                                     <tr>
-                                        {/* --- MODIFIED HEADER: Applying dynamic widths --- */}
                                         {displayHeader.map(h => {
                                             const isSkillColumn = h === 'Required Skill Set';
                                             const isTitleColumn = h === 'Posting Title';
-                                            let style = { minWidth: '140px' }; // Default min-width for columns
-                                            if (isSkillColumn) {
-                                                style = { width: '300px' }; // Specific width for Skill Set
-                                            } else if (isTitleColumn) {
-                                                style = { width: '250px' }; // A bit more width for the title
-                                            }
+                                            let style = { minWidth: '140px' };
+                                            if (isSkillColumn) style = { width: '300px' };
+                                            else if (isTitleColumn) style = { width: '200px' };
                                             
                                             return (
                                                 <th key={h} scope="col" className="px-4 py-3" style={style}>
-                                                    <div onClick={() => handleSort(h)} className="sortable-header font-bold flex items-center">
-                                                        <span>{h}</span>
-                                                        <span className="ml-2">{sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}</span>
-                                                    </div>
+                                                    <Dropdown 
+                                                        width="64"
+                                                        trigger={
+                                                            <div className="header-menu-trigger font-bold">
+                                                                <span>{h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}</span>
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className={`filter-icon ${columnFilters[h] ? 'active' : ''}`} viewBox="0 0 16 16">
+                                                                    <path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.74.439L7 12.439a.5.5 0 0 1-.26-.439V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5v-2z"/>
+                                                                </svg>
+                                                            </div>
+                                                        }>
+                                                        <HeaderMenu 
+                                                            header={h} 
+                                                            sortConfig={sortConfig} 
+                                                            onSort={(dir) => handleSort(h, dir)}
+                                                            filterConfig={columnFilters[h]}
+                                                            onFilterChange={handleColumnFilterChange}
+                                                        />
+                                                    </Dropdown>
                                                 </th>
                                             );
                                         })}
@@ -845,11 +943,11 @@
                                                 const isDate = DATE_COLUMNS.includes(headerName);
                                                 const postingId = row[displayHeader.indexOf('Posting ID')];
                                                 const isModified = unsavedChanges[postingId] && unsavedChanges[postingId][headerName] !== undefined;
-                                                
+                                                const deadlineClass = headerName === 'Deadline' ? getDeadlineClass(cell) : '';
+
                                                 return (
-                                                    // --- MODIFIED CELL: Removed conditional wrap-text class ---
                                                     <td key={cellIndex} 
-                                                        className={`px-4 py-3 ${isModified ? 'modified-cell' : ''}`}
+                                                        className={`px-4 py-3 ${isModified ? 'modified-cell' : ''} ${deadlineClass}`}
                                                         contentEditable={isEditable}
                                                         suppressContentEditableWarning={true}
                                                         onBlur={e => isEditable && handleCellEdit(rowIndex, cellIndex, e.target.innerText)}
@@ -884,7 +982,7 @@
                     <ColumnSettingsModal 
                         isOpen={isColumnModalOpen}
                         onClose={() => setColumnModalOpen(false)}
-                        allHeaders={rawData.header.filter(h => h !== 'Company Name' && h !== 'Posting From')}
+                        allHeaders={transformedData.header}
                         userPrefs={userPrefs}
                         onSave={handleSaveColumnSettings}
                     />
@@ -899,10 +997,10 @@
             const dragOverItem = useRef();
 
             useEffect(() => {
+                if (!isOpen) return;
                 const initialOrder = userPrefs.order.length > 0 ? userPrefs.order.filter(h => allHeaders.includes(h)) : allHeaders;
                 const remainingHeaders = allHeaders.filter(h => !initialOrder.includes(h));
                 setOrder([...initialOrder, ...remainingHeaders]);
-
                 const initialVisibility = {};
                 allHeaders.forEach(h => { initialVisibility[h] = !userPrefs.visibility.includes(h); });
                 setVisibility(initialVisibility);
@@ -972,7 +1070,7 @@
             </Modal>
         );
 
-        // --- Main App Structure (Merged) ---------------------------------------------------
+        // --- Main App Structure ---------------------------------------------------
         const TopNav = ({ user, logout, currentPage, setCurrentPage }) => {
             const isAdmin = user?.userRole?.includes('Admin');
             return (
