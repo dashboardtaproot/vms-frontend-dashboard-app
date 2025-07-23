@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VMS Dashboard</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React and Babel for JSX transpilation -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Chart.js for reports -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Lucide Icons for UI elements -->
+    <script src="https://unpkg.com/lucide-react@0.292.0/dist/lucide-react.js"></script>
+
+    <!-- Custom Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom styles to complement Tailwind */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; /* slate-100 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* slate-300 */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; /* slate-400 */
+        }
+        /* Style for disabled buttons */
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // ===================================================================================
+        // VMS Dashboard - React Application
+        // This single file contains the entire frontend logic.
+        // It's structured into components for readability and maintainability.
+        // ===================================================================================
+
+        const { useState, useEffect, createContext, useContext, useReducer, useRef } = React;
+        const { createRoot } = ReactDOM;
+
+        // --- Configuration -----------------------------------------------------------------
+        // This relative path works because the Static Web App is linked to the Function App.
+        const API_BASE_URL = '/api';
+
+        // --- API Helper --------------------------------------------------------------------
+        // A centralized place for all backend API calls.
+        const api = {
+            call: async (endpoint, method = 'GET', body = null, params = {}) => {
+                const url = new URL(`${API_BASE_URL}/${endpoint}`, window.location.origin);
+                
+                // Add query parameters for GET requests
+                if (method === 'GET') {
+                    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+                }
+
+                const options = {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                };
+
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ message: 'An unknown error occurred.' }));
+                        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                    }
+                    return await response.json();
+                } catch (error) {
+                    console.error(`API call to ${endpoint} failed:`, error);
+                    throw error;
+                }
+            },
+            
+            // Authentication
+            authenticateUser: (username, password) => api.call('authenticateUser', 'POST', { username, password }),
+            changePassword: (targetUsername, newPassword, authenticatedUsername) => api.call('changePassword', 'POST', { targetUsername, newPassword, authenticatedUsername }),
+            requestPasswordReset: (username) => api.call('requestPasswordReset', 'POST', { username }),
+
+            // Users (Admin)
+            getUsers: (authenticatedUsername) => api.call('getUsers', 'GET', null, { authenticatedUsername }),
+            addUser: (userData, authenticatedUsername) => api.call('addUser', 'POST', { ...userData, authenticatedUsername }),
+            updateUser: (originalUsername, userData, authenticatedUsername) => api.call('updateUser', 'POST', { originalUsername, userData, authenticatedUsername }),
+            deleteUser: (usernameToDelete, authenticatedUsername) => api.call('deleteUser', 'POST', { usernameToDelete, authenticatedUsername }),
+
+            // Job Postings
+            getDashboardData: (sheetKey, authenticatedUsername) => api.call('getDashboardData', 'GET', null, { sheetKey, authenticatedUsername }),
+            processJobPosting: (formData, authenticatedUsername) => api.call('processJobPosting', 'POST', { formData, authenticatedUsername }),
+            updateJobPosting: (updates, authenticatedUsername) => api.call('updateJobPosting', 'POST', { updates, authenticatedUsername }),
+            updateJobStatus: (postingIds, newStatus, authenticatedUsername) => api.call('updateJobStatus', 'POST', { postingIds, newStatus, authenticatedUsername }),
+            archiveOrDeleteJob: (postingIds, actionType, authenticatedUsername) => api.call('archiveOrDeleteJob', 'POST', { postingIds, actionType, authenticatedUsername }),
+            
+            // Reports
+            getReportData: (params) => api.call('getReportData', 'GET', null, params), // params: {sheetKey, startDate, endDate, authenticatedUsername}
+            generateAndSendJobReport: (reportData) => api.call('generateAndSendJobReport', 'POST', reportData),
+
+            // Notifications
+            getNotifications: (authenticatedUsername) => api.call('getNotifications', 'GET', null, { authenticatedUsername }),
+            markNotificationsAsRead: (notificationIds, authenticatedUsername) => api.call('markNotificationsAsRead', 'POST', { notificationIds, authenticatedUsername }),
+
+            // Chat
+            getMessages: (user1, user2, authenticatedUsername) => api.call('getMessages', 'GET', null, { user1, user2, authenticatedUsername }),
+            saveMessage: (sender, recipient, messageContent, authenticatedUsername) => api.call('saveMessage', 'POST', { sender, recipient, messageContent, authenticatedUsername }),
+        };
+
+        // --- Authentication Context --------------------------------------------------------
+        // Manages user session state across the application.
+        const AuthContext = createContext();
+
+        const authReducer = (state, action) => {
+            switch (action.type) {
+                case 'LOGIN':
+                    return { ...state, isAuthenticated: true, user: action.payload, isFirstLogin: action.payload.isFirstLogin };
+                case 'LOGOUT':
+                    return { ...state, isAuthenticated: false, user: null, isFirstLogin: false };
+                case 'PASSWORD_CHANGED':
+                    return { ...state, isFirstLogin: false };
+                default:
+                    return state;
+            }
+        };
+
+        const AuthProvider = ({ children }) => {
+            const [state, dispatch] = useReducer(authReducer, {
+                isAuthenticated: false,
+                user: null,
+                isFirstLogin: false,
+            });
+
+            useEffect(() => {
+                // Check for saved user session on initial load
+                try {
+                    const savedUser = localStorage.getItem('vms_user');
+                    if (savedUser) {
+                        const user = JSON.parse(savedUser);
+                        dispatch({ type: 'LOGIN', payload: user });
+                    }
+                } catch (error) {
+                    console.error("Failed to parse user from localStorage", error);
+                    localStorage.removeItem('vms_user');
+                }
+            }, []);
+
+            const login = (userData) => {
+                localStorage.setItem('vms_user', JSON.stringify(userData));
+                dispatch({ type: 'LOGIN', payload: userData });
+            };
+
+            const logout = () => {
+                localStorage.removeItem('vms_user');
+                dispatch({ type: 'LOGOUT' });
+            };
+            
+            const passwordChanged = () => {
+                const updatedUser = { ...state.user, isFirstLogin: false };
+                localStorage.setItem('vms_user', JSON.stringify(updatedUser));
+                dispatch({ type: 'PASSWORD_CHANGED' });
+            };
+
+            return (
+                <AuthContext.Provider value={{ ...state, login, logout, passwordChanged }}>
+                    {children}
+                </AuthContext.Provider>
+            );
+        };
+
+        const useAuth = () => useContext(AuthContext);
+
+        // --- Reusable UI Components --------------------------------------------------------
+
+        const Icon = ({ name, ...props }) => {
+            return React.createElement(lucide[name], props);
+        };
+        
+        const Modal = ({ isOpen, onClose, title, children }) => {
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={onClose}>
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center p-4 border-b">
+                            <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
+                            <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
+                                <Icon name="X" className="w-6 h-6" />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            {children}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const Toast = ({ message, type, onDismiss }) => {
+            const baseClasses = "fixed bottom-5 right-5 p-4 rounded-lg shadow-lg text-white z-50 flex items-center";
+            const typeClasses = {
+                success: "bg-green-500",
+                error: "bg-red-500",
+                info: "bg-blue-500",
+            };
+
+            useEffect(() => {
+                const timer = setTimeout(onDismiss, 5000);
+                return () => clearTimeout(timer);
+            }, [onDismiss]);
+
+            return (
+                <div className={`${baseClasses} ${typeClasses[type] || 'bg-gray-800'}`}>
+                    <Icon name={type === 'success' ? 'CheckCircle' : 'AlertCircle'} className="w-5 h-5 mr-3" />
+                    <span>{message}</span>
+                    <button onClick={onDismiss} className="ml-4 text-white font-bold">
+                        <Icon name="X" className="w-4 h-4" />
+                    </button>
+                </div>
+            );
+        };
+        
+        const Spinner = ({ size = '8' }) => (
+            <div className={`animate-spin rounded-full h-${size} w-${size} border-b-2 border-indigo-600`}></div>
+        );
+
+        // --- Main Application Pages/Views --------------------------------------------------
+
+        // 1. Login Page
+        const LoginPage = () => {
+            const [username, setUsername] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+            const { login } = useAuth();
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError('');
+                setLoading(true);
+                try {
+                    const data = await api.authenticateUser(username, password);
+                    if (data.success) {
+                        login(data);
+                    } else {
+                        setError(data.message);
+                    }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            
+            // TODO: Implement forgot password modal/flow
+            const handleForgotPassword = () => {
+                alert("Forgot Password functionality to be implemented.");
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center">
+                    <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg">
+                        <div className="text-center mb-8">
+                            <h1 className="text-3xl font-bold text-gray-800">VMS Dashboard</h1>
+                            <p className="text-gray-500 mt-2">Welcome back! Please log in.</p>
+                        </div>
+                        {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">{error}</div>}
+                        <form onSubmit={handleSubmit}>
+                            <div className="mb-4">
+                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="username">
+                                    Username (Email)
+                                </label>
+                                <input
+                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    id="username"
+                                    type="email"
+                                    placeholder="user@example.com"
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="mb-6">
+                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">
+                                    Password
+                                </label>
+                                <input
+                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    id="password"
+                                    type="password"
+                                    placeholder="******************"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <button
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full flex justify-center items-center"
+                                    type="submit"
+                                    disabled={loading}
+                                >
+                                    {loading ? <Spinner size="5" /> : 'Sign In'}
+                                </button>
+                            </div>
+                            <div className="text-center mt-4">
+                                <a className="inline-block align-baseline font-bold text-sm text-indigo-600 hover:text-indigo-800" href="#" onClick={handleForgotPassword}>
+                                    Forgot Password?
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        // 2. Change Password Page (for first-time login)
+        const ChangePasswordPage = () => {
+            const { user, passwordChanged, logout } = useAuth();
+            const [newPassword, setNewPassword] = useState('');
+            const [confirmPassword, setConfirmPassword] = useState('');
+            const [error, setError] = useState('');
+            const [success, setSuccess] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (newPassword !== confirmPassword) {
+                    setError("Passwords do not match.");
+                    return;
+                }
+                if (newPassword.length < 6) {
+                    setError("Password must be at least 6 characters long.");
+                    return;
+                }
+                setError('');
+                setLoading(true);
+                try {
+                    const data = await api.changePassword(user.userIdentifier, newPassword, user.userIdentifier);
+                    if (data.success) {
+                        setSuccess("Password changed successfully! You can now access the dashboard.");
+                        setTimeout(() => {
+                           passwordChanged();
+                        }, 2000);
+                    } else {
+                        setError(data.message);
+                    }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center">
+                    <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg">
+                        <div className="text-center mb-8">
+                            <h1 className="text-3xl font-bold text-gray-800">Change Your Password</h1>
+                            <p className="text-gray-500 mt-2">This is your first login. Please set a new password.</p>
+                        </div>
+                        {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
+                        {success && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">{success}</div>}
+                        <form onSubmit={handleSubmit}>
+                            <div className="mb-4">
+                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="new-password">
+                                    New Password
+                                </label>
+                                <input
+                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"
+                                    id="new-password"
+                                    type="password"
+                                    value={newPassword}
+                                    onChange={(e) => setNewPassword(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="mb-6">
+                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="confirm-password">
+                                    Confirm New Password
+                                </label>
+                                <input
+                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"
+                                    id="confirm-password"
+                                    type="password"
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <button
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded w-full flex justify-center items-center"
+                                type="submit"
+                                disabled={loading}
+                            >
+                                {loading ? <Spinner size="5" /> : 'Set New Password'}
+                            </button>
+                        </form>
+                        <button onClick={logout} className="mt-4 text-sm text-gray-600 hover:text-gray-800 w-full">Logout</button>
+                    </div>
+                </div>
+            );
+        };
+
+        // 3. Main Dashboard Application Layout
+        const MainApp = () => {
+            const [currentPage, setCurrentPage] = useState('dashboard');
+            const { user, logout } = useAuth();
+            const isAdmin = user?.userRole?.includes('Admin');
+
+            const NavLink = ({ page, icon, children }) => (
+                <button
+                    onClick={() => setCurrentPage(page)}
+                    className={`flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                        currentPage === page ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                >
+                    <Icon name={icon} className="w-5 h-5 mr-3" />
+                    {children}
+                </button>
+            );
+
+            return (
+                <div className="flex h-screen bg-gray-100">
+                    {/* Sidebar */}
+                    <aside className="w-64 bg-white border-r flex flex-col">
+                        <div className="px-6 py-4 border-b">
+                            <h2 className="text-xl font-bold text-indigo-600">VMS Portal</h2>
+                        </div>
+                        <nav className="flex-1 p-4 space-y-2">
+                            <NavLink page="dashboard" icon="LayoutDashboard">Dashboard</NavLink>
+                            <NavLink page="reports" icon="BarChart3">Reports</NavLink>
+                            {isAdmin && <NavLink page="admin" icon="Users">Admin</NavLink>}
+                        </nav>
+                        <div className="p-4 border-t">
+                             <div className="mb-4">
+                                <p className="text-sm font-semibold text-gray-700">{user.userName}</p>
+                                <p className="text-xs text-gray-500">{user.userIdentifier}</p>
+                            </div>
+                            <button onClick={logout} className="w-full flex items-center justify-center px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium">
+                                <Icon name="LogOut" className="w-5 h-5 mr-2" />
+                                Logout
+                            </button>
+                        </div>
+                    </aside>
+
+                    {/* Main Content */}
+                    <main className="flex-1 p-6 overflow-y-auto">
+                        {currentPage === 'dashboard' && <DashboardPage />}
+                        {currentPage === 'reports' && <ReportsPage />}
+                        {currentPage === 'admin' && <AdminPage />}
+                    </main>
+                </div>
+            );
+        };
+        
+        // 4. Dashboard Page
+        const DashboardPage = () => {
+            // This is a placeholder. The actual implementation is very complex.
+            // For now, we'll just show a message.
+            return (
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800 mb-6">Dashboard</h1>
+                    <div className="bg-white p-6 rounded-lg shadow">
+                      <p className="text-gray-700">
+                        Welcome to the VMS Dashboard. Select a view from the sidebar to see job postings.
+                        The full implementation for the interactive data grid is extensive and would be built out here.
+                      </p>
+                    </div>
+                </div>
+            );
+        };
+        
+        // 5. Reports Page
+        const ReportsPage = () => {
+             return (
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800 mb-6">Reports</h1>
+                    <div className="bg-white p-6 rounded-lg shadow">
+                      <p className="text-gray-700">
+                        The reports section would contain charts and data visualizations based on job posting data.
+                        It would use the `getReportData` and `generateAndSendJobReport` functions.
+                      </p>
+                    </div>
+                </div>
+            );
+        };
+        
+        // 6. Admin Page
+        const AdminPage = () => {
+            const { user } = useAuth();
+            const [users, setUsers] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+            
+            useEffect(() => {
+                const fetchUsers = async () => {
+                    try {
+                        const data = await api.getUsers(user.userIdentifier);
+                        if(data.success) {
+                            setUsers(data.users);
+                        } else {
+                            setError(data.message);
+                        }
+                    } catch (err) {
+                        setError(err.message);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+                fetchUsers();
+            }, [user.userIdentifier]);
+
+            if (loading) return <div className="flex justify-center items-center h-full"><Spinner /></div>;
+            if (error) return <div className="text-red-500">Error: {error}</div>;
+
+            return (
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800 mb-6">Admin - User Management</h1>
+                    <div className="bg-white p-6 rounded-lg shadow">
+                        <div className="flex justify-end mb-4">
+                            <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center">
+                                <Icon name="UserPlus" className="w-5 h-5 mr-2" /> Add User
+                            </button>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left text-gray-500">
+                                <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr>
+                                        <th scope="col" className="px-6 py-3">Display Name</th>
+                                        <th scope="col" className="px-6 py-3">Username</th>
+                                        <th scope="col" className="px-6 py-3">Role</th>
+                                        <th scope="col" className="px-6 py-3">Backend Role</th>
+                                        <th scope="col" className="px-6 py-3">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {users.map((u, index) => (
+                                        <tr key={index} className="bg-white border-b hover:bg-gray-50">
+                                            <td className="px-6 py-4 font-medium text-gray-900">{u.displayName}</td>
+                                            <td className="px-6 py-4">{u.username}</td>
+                                            <td className="px-6 py-4">{u.userRole}</td>
+                                            <td className="px-6 py-4">{u.backendOfficeRole}</td>
+                                            <td className="px-6 py-4 flex space-x-2">
+                                                <button className="text-indigo-600 hover:text-indigo-900"><Icon name="Edit" className="w-4 h-4"/></button>
+                                                <button className="text-red-600 hover:text-red-900"><Icon name="Trash2" className="w-4 h-4"/></button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        // --- App Component (Root) ----------------------------------------------------------
+        // This component orchestrates which view is shown based on authentication state.
+        const App = () => {
+            const { isAuthenticated, isFirstLogin } = useAuth();
+
+            if (!isAuthenticated) {
+                return <LoginPage />;
+            }
+
+            if (isFirstLogin) {
+                return <ChangePasswordPage />;
+            }
+
+            return <MainApp />;
+        };
+
+        // --- Render the Application --------------------------------------------------------
+        const root = createRoot(document.getElementById('root'));
+        root.render(
+            <AuthProvider>
+                <App />
+            </AuthProvider>
+        );
+
+    </script>
+</body>
+</html>
+```
+
+### Step 5: Commit and Push the Code Change
+
+Now for the final step that makes the GitHub workflow so powerful.
+
+1.  **Save the changes** to your local `index.html` file (with the updated `API_BASE_URL = '/api';`).
+2.  **Commit** this change to your local Git repository. A good commit message would be `feat: Update API_BASE_URL for Azure proxy`.
+3.  **Push** the commit to your `main` (or `master`) branch on GitHub.
+
+```bash
+# Example git commands
+git add index.html
+git commit -m "feat: Update API_BASE_URL for Azure proxy"
+git push
+```
+
+### What Happens Next
+
+Pushing this change will **automatically trigger a new deployment**.
+
+* Go back to the **"Actions"** tab in your GitHub repository. You will see a new workflow run has started.
+* Wait for it to complete successfully (it should only take a minute or two).
+* Once it's done, your Static Web App will be running the latest version of the code with the correct API path.
+
+### Step 6: Test the Live Application
+
+Go to your Static Web App's URL. You should now be able to log in and interact with your application, as it can successfully communicate with your backend functio
