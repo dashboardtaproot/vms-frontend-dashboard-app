@@ -513,6 +513,27 @@
                 }
             };
             
+            const COLUMN_WIDTHS = {
+                'Posting ID': { minWidth: '5rem' },
+                'Posting Title': { minWidth: '12rem' },
+                'Posting Date': { minWidth: '8rem' },
+                'Deadline': { minWidth: '8rem' },
+                'Max Submissions': { minWidth: '6rem' },
+                'Max C2C Rate': { minWidth: '6rem' },
+                'Client Info': { minWidth: '12rem' },
+                'Required Skill Set': { minWidth: '24rem' },
+                'Any Required Certificates': { minWidth: '16rem' },
+                'Work Position Type': { minWidth: '8rem' },
+                'Working By': { minWidth: '10rem' },
+                '# Submitted': { minWidth: '6rem' },
+                'Remarks': { minWidth: '12rem' },
+                '1st Candidate Name': { minWidth: '10rem' },
+                '2nd Candidate Name': { minWidth: '10rem' },
+                '3rd Candidate Name': { minWidth: '10rem' },
+                'Status': { minWidth: '6rem' },
+                'Action': { minWidth: '5rem' }
+            };
+
             return (
                 <div className="space-y-4">
                     <div className="bg-white p-4 rounded-lg shadow-sm border">
@@ -547,13 +568,13 @@
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                                     <tr>
                                         {displayHeader.map(h => 
-                                            <th key={h} scope="col" className="px-4 py-3" >
+                                            <th key={h} scope="col" className="px-4 py-3" style={COLUMN_WIDTHS[h] || {}}>
                                                 <div onClick={() => handleSort(h)} className="sortable-header font-bold">
                                                     {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
                                                 </div>
                                             </th>
                                         )}
-                                        <th scope="col" className="px-4 py-3">Action</th>
+                                        <th scope="col" className="px-4 py-3" style={COLUMN_WIDTHS['Action']}>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
