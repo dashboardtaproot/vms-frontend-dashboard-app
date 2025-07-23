@@ -344,11 +344,25 @@
                 
                 newHeader = newHeader.filter(h => h !== 'Company Name');
 
+                const defaultOrder = [
+                    'Posting ID', 'Posting Title', 'Posting Date', 'Max Submissions', 'Max C2C Rate',
+                    'Required Skill Set', 'Any Required Certificates', 'Work Position Type', 'Working By',
+                    'Remarks', '1st Candidate Name', '2nd Candidate Name', '3rd Candidate Name', 'Status',
+                    'Deadline', 'Client Info', '# Submitted'
+                ];
+
                 if (userPrefs.order.length > 0) {
                     const orderedHeader = userPrefs.order.filter(h => newHeader.includes(h));
                     const remainingHeader = newHeader.filter(h => !userPrefs.order.includes(h));
                     const finalHeaderOrder = [...orderedHeader, ...remainingHeader];
                     
+                    const reorderIndices = finalHeaderOrder.map(h => newHeader.indexOf(h));
+                    newRows = newRows.map(row => reorderIndices.map(i => row[i]));
+                    newHeader = finalHeaderOrder;
+                } else {
+                    const defaultOrderedHeader = defaultOrder.filter(h => newHeader.includes(h));
+                    const remainingFromBackend = newHeader.filter(h => !defaultOrder.includes(h));
+                    const finalHeaderOrder = [...defaultOrderedHeader, ...remainingFromBackend];
                     const reorderIndices = finalHeaderOrder.map(h => newHeader.indexOf(h));
                     newRows = newRows.map(row => reorderIndices.map(i => row[i]));
                     newHeader = finalHeaderOrder;
@@ -500,27 +514,6 @@
                 }
             };
             
-            const COLUMN_WIDTH_STYLES = {
-                'Posting ID': { width: '4%' },
-                'Posting Title': { width: '8%' },
-                'Posting Date': { width: '6%' },
-                'Deadline': { width: '6%' },
-                'Max Submissions': { width: '5%' },
-                'Max C2C Rate': { width: '5%' },
-                'Client Info': { width: '8%' },
-                'Required Skill Set': { width: '15%' },
-                'Any Required Certificates': { width: '10%' },
-                'Work Position Type': { width: '6%' },
-                'Working By': { width: '6%' },
-                '# Submitted': { width: '5%' },
-                'Remarks': { width: '8%' },
-                '1st Candidate Name': { width: '6%' },
-                '2nd Candidate Name': { width: '6%' },
-                '3rd Candidate Name': { width: '6%' },
-                'Status': { width: '4%' },
-                'Action': { width: '4%' }
-            };
-
             return (
                 <div className="space-y-4">
                     <div className="bg-white p-4 rounded-lg shadow-sm border">
@@ -555,13 +548,13 @@
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                                     <tr>
                                         {displayHeader.map(h => 
-                                            <th key={h} scope="col" className="px-4 py-3" style={COLUMN_WIDTH_STYLES[h] || {}}>
+                                            <th key={h} scope="col" className="px-4 py-3" >
                                                 <div onClick={() => handleSort(h)} className="sortable-header font-bold">
                                                     {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
                                                 </div>
                                             </th>
                                         )}
-                                        <th scope="col" className="px-4 py-3" style={COLUMN_WIDTH_STYLES['Action']}>Action</th>
+                                        <th scope="col" className="px-4 py-3">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -576,7 +569,7 @@
                                                 
                                                 return (
                                                     <td key={cellIndex} 
-                                                        className={`px-4 py-3 ${isModified ? 'modified-cell' : ''}`}
+                                                        className={`px-4 py-3 ${isModified ? 'modified-cell' : ''} ${headerName === 'Required Skill Set' ? 'wrap-text' : ''}`}
                                                         contentEditable={isEditable}
                                                         suppressContentEditableWarning={true}
                                                         onBlur={e => isEditable && handleCellEdit(rowIndex, cellIndex, e.target.innerText)}
