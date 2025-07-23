@@ -58,6 +58,15 @@
             cursor: pointer;
             user-select: none;
         }
+        .table-fixed th, .table-fixed td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .table-fixed th.wrap-text, .table-fixed td.wrap-text {
+            white-space: normal;
+            word-break: break-word;
+        }
     </style>
 </head>
 <body>
@@ -156,12 +165,7 @@
         // --- Reusable UI Components --------------------------------------------------------
         const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
             if (!isOpen) return null;
-            const sizeClasses = {
-                sm: 'max-w-sm',
-                md: 'max-w-md',
-                lg: 'max-w-lg',
-                xl: 'max-w-xl',
-            };
+            const sizeClasses = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl' };
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={onClose}>
                     <div className={`bg-white rounded-lg shadow-xl w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col`} onClick={e => e.stopPropagation()}>
@@ -256,11 +260,10 @@
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
             const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
-            const [filter, setFilter] = useState('');
+            const [columnFilters, setColumnFilters] = useState({});
             const [statusFilter, setStatusFilter] = useState('');
             const [unsavedChanges, setUnsavedChanges] = useState({});
-
-            const [modalState, setModalState] = useState({ type: null, job: null }); // null, 'close', 'archive', 'delete', 'details'
+            const [modalState, setModalState] = useState({ type: null, job: null });
 
             const loadData = useCallback(async () => {
                 setLoading(true);
@@ -287,6 +290,10 @@
                 let direction = 'ascending';
                 if (sortConfig.key === key && sortConfig.direction === 'ascending') direction = 'descending';
                 setSortConfig({ key, direction });
+            };
+
+            const handleColumnFilterChange = (headerKey, value) => {
+                setColumnFilters(prev => ({ ...prev, [headerKey]: value }));
             };
             
             const handleCellEdit = (rowIndex, cellIndex, value) => {
@@ -348,13 +355,23 @@
             
             const filteredAndSortedData = useMemo(() => {
                 let processData = [...data];
+                
                 if (statusFilter) {
                     const statusIndex = header.indexOf('Status');
                     if (statusIndex > -1) processData = processData.filter(row => String(row[statusIndex]).toLowerCase() === statusFilter.toLowerCase());
                 }
-                if (filter) {
-                    processData = processData.filter(row => row.some(cell => String(cell).toLowerCase().includes(filter.toLowerCase())));
-                }
+
+                Object.entries(columnFilters).forEach(([headerKey, filterValue]) => {
+                    if (filterValue) {
+                        const colIndex = header.indexOf(headerKey);
+                        if (colIndex > -1) {
+                            processData = processData.filter(row => 
+                                String(row[colIndex]).toLowerCase().includes(filterValue.toLowerCase())
+                            );
+                        }
+                    }
+                });
+
                 if (sortConfig.key !== null) {
                     const sortIndex = header.indexOf(sortConfig.key);
                     processData.sort((a, b) => {
@@ -364,9 +381,35 @@
                     });
                 }
                 return processData;
-            }, [data, sortConfig, filter, statusFilter, header]);
+            }, [data, sortConfig, columnFilters, statusFilter, header]);
 
-            const currentDashboard = DASHBOARD_CONFIGS[sheetKey];
+            const downloadCsv = () => {
+                const csvRows = [];
+                csvRows.push(header.join(','));
+                for (const row of filteredAndSortedData) {
+                    const values = row.map(v => `"${String(v).replace(/"/g, '""')}"`);
+                    csvRows.push(values.join(','));
+                }
+                const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.setAttribute('hidden', '');
+                a.setAttribute('href', url);
+                a.setAttribute('download', `${sheetKey}_report.csv`);
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            };
+
+            const downloadPdf = () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('landscape');
+                doc.autoTable({
+                    head: [header],
+                    body: filteredAndSortedData,
+                });
+                doc.save(`${sheetKey}_report.pdf`);
+            };
             
             const jobToObject = (row) => {
                 const obj = {};
@@ -376,24 +419,8 @@
 
             return (
                 <div className="space-y-4">
-                    <div className="bg-white p-4 rounded-lg shadow-sm border">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <h3 className="text-sm font-medium text-gray-500">Company Name</h3>
-                                <p className="text-lg font-semibold text-gray-800">{currentDashboard?.companyName || '...'}</p>
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-medium text-gray-500">Posting From</h3>
-                                <p className="text-lg font-semibold text-gray-800">{currentDashboard?.postingFrom || '...'}</p>
-                            </div>
-                        </div>
-                    </div>
-                    
                     <div className="bg-white p-4 rounded-lg shadow-sm border flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                            <input type="text" placeholder="Search to collect text..." value={filter} onChange={e => setFilter(e.target.value)} className="shadow-sm border-gray-300 rounded-md w-64"/>
-                            <button className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Search</button>
-                        </div>
+                        <h2 className="text-xl font-bold text-gray-800">{DASHBOARD_CONFIGS[sheetKey]?.title || 'Dashboard'}</h2>
                         <div className="flex items-center space-x-2">
                             <button onClick={loadData} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Refresh</button>
                             <button onClick={handleSaveChanges} disabled={Object.keys(unsavedChanges).length === 0} className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-400">Save Changes</button>
@@ -403,8 +430,8 @@
                                 <option value="Closed">Closed</option>
                             </select>
                             <Dropdown trigger={<button className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Options</button>}>
-                                <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download CSV</a>
-                                <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download PDF</a>
+                                <a href="#" onClick={downloadCsv} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download CSV</a>
+                                <a href="#" onClick={downloadPdf} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Download PDF</a>
                             </Dropdown>
                         </div>
                     </div>
@@ -412,16 +439,26 @@
                     {loading && <div className="flex justify-center items-center h-64"><Spinner /></div>}
                     {error && <div className="text-red-500 bg-red-100 p-4 rounded-lg">Error: {error}</div>}
                     {!loading && !error && (
-                        <div className="bg-white rounded-lg shadow overflow-x-auto">
-                            <table className="w-full text-sm text-left text-gray-500">
+                        <div className="bg-white rounded-lg shadow">
+                            <table className="w-full text-sm text-left text-gray-500 table-fixed">
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                                     <tr>
                                         {header.map(h => 
-                                            <th key={h} scope="col" className="px-6 py-3 sortable-header" onClick={() => handleSort(h)}>
-                                                {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
+                                            <th key={h} scope="col" className="px-4 py-2 w-48 first:w-32 last:w-24 wrap-text" >
+                                                <div className="flex flex-col">
+                                                    <div onClick={() => handleSort(h)} className="sortable-header font-bold">
+                                                        {h} {sortConfig.key === h ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
+                                                    </div>
+                                                    <input type="text" placeholder={`Filter...`} 
+                                                        className="mt-1 p-1 border rounded text-xs"
+                                                        value={columnFilters[h] || ''}
+                                                        onChange={(e) => handleColumnFilterChange(h, e.target.value)}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                </div>
                                             </th>
                                         )}
-                                        <th scope="col" className="px-6 py-3">Action</th>
+                                        <th scope="col" className="px-4 py-3 w-24">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -436,7 +473,7 @@
                                                 
                                                 return (
                                                     <td key={cellIndex} 
-                                                        className={`px-6 py-4 ${isModified ? 'modified-cell' : ''}`}
+                                                        className={`px-4 py-3 ${isModified ? 'modified-cell' : ''} ${headerName === 'Required Skill Set' ? 'wrap-text' : ''}`}
                                                         contentEditable={isEditable}
                                                         suppressContentEditableWarning={true}
                                                         onBlur={e => isEditable && handleCellEdit(rowIndex, cellIndex, e.target.innerText)}
@@ -445,7 +482,7 @@
                                                     </td>
                                                 );
                                             })}
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-3">
                                                 <ActionMenu job={row} onAction={(type, job) => setModalState({type, job: jobToObject(job)})} />
                                             </td>
                                         </tr>
