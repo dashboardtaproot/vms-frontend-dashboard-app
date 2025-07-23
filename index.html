@@ -64,10 +64,10 @@
         }
         .table-layout th, .table-layout td {
             overflow-wrap: break-word;
-            border-right: 1px solid #e5e7eb; /* NEW: Add right border */
+            border-right: 1px solid #e5e7eb; /* Add right border */
         }
         .table-layout th:last-child, .table-layout td:last-child {
-            border-right: none; /* NEW: Remove right border from last cell */
+            border-right: none; /* Remove right border from last cell */
         }
         .column-list-item.dragging {
             opacity: 0.5;
@@ -95,8 +95,8 @@
             'EclatTexasDisplay': { title: 'Eclat Texas VMS', companyName: 'Eclat Solutions LLC', postingFrom: 'State Of Texas' },
             'TaprootTexasDisplay': { title: 'Taproot Texas VMS', companyName: 'Taproot Solutions INC', postingFrom: 'State Of Texas' },
         };
-        const EDITABLE_COLUMNS = ['Working By', 'No. of Resumes Submitted', 'Remarks', '1st Candidate Name', '2nd Candidate Name', '3rd Candidate Name'];
-        const DATE_COLUMNS = ['Posting Date', 'Last Submission Date'];
+        const EDITABLE_COLUMNS = ['Working By', '# Submitted', 'Remarks', '1st Candidate Name', '2nd Candidate Name', '3rd Candidate Name'];
+        const DATE_COLUMNS = ['Posting Date', 'Deadline'];
 
         const formatDate = (isoString) => {
             if (!isoString || isoString === 'Need To Update') return isoString;
@@ -317,6 +317,12 @@
 
                 let newHeader = [...header];
                 let newRows = rows.map(r => [...r]);
+
+                // Rename columns first
+                const lastSubIndex = newHeader.indexOf('Last Submission Date');
+                if(lastSubIndex !== -1) newHeader[lastSubIndex] = 'Deadline';
+                const resumesIndex = newHeader.indexOf('No. of Resumes Submitted');
+                if(resumesIndex !== -1) newHeader[resumesIndex] = '# Submitted';
 
                 const clientIndex = newHeader.indexOf('Client Name');
                 const postingFromIndex = newHeader.indexOf('Posting From');
